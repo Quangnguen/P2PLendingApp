@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,20 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
+import LinearGradient from 'react-native-linear-gradient';
 import { Card, Button } from '@/components/common';
 import { useTheme } from '@/providers';
+import { useAuth } from '@/store';
 import { RootStackParamList } from '@/navigation/types';
 import { formatCurrency } from '@/utils/formatters';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+
+const { width } = Dimensions.get('window');
 
 type BrowseLoansScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BrowseLoans'>;
@@ -34,67 +40,74 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'low_risk' | 'high_return'>('all');
   const { colors } = useTheme();
+  const { user } = useAuth();
+  const [loanRequests, setLoanRequests] = useState<LoanRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const loanRequests: LoanRequest[] = [
-    {
-      id: '1',
-      borrowerName: 'Nguyễn Văn A',
-      amount: 50000000,
-      interestRate: 12,
-      term: 12,
-      purpose: 'Kinh doanh',
-      creditScore: 750,
-      funded: 65,
-    },
-    {
-      id: '2',
-      borrowerName: 'Trần Thị B',
-      amount: 20000000,
-      interestRate: 15,
-      term: 6,
-      purpose: 'Tiêu dùng',
-      creditScore: 680,
-      funded: 30,
-    },
-    {
-      id: '3',
-      borrowerName: 'Lê Văn C',
-      amount: 100000000,
-      interestRate: 10,
-      term: 24,
-      purpose: 'Đầu tư',
-      creditScore: 800,
-      funded: 80,
-    },
-    {
-      id: '4',
-      borrowerName: 'Phạm Thị D',
-      amount: 30000000,
-      interestRate: 14,
-      term: 9,
-      purpose: 'Giáo dục',
-      creditScore: 720,
-      funded: 45,
-    },
-  ];
-
-  const filters = [
-    { key: 'all', label: 'Tất cả' },
-    { key: 'low_risk', label: 'Rủi ro thấp' },
-    { key: 'high_return', label: 'Lợi nhuận cao' },
-  ];
-
-  const getCreditScoreColor = (score: number) => {
-    if (score >= 750) return colors.greenSuccess;
-    if (score >= 650) return colors.yellowWarning;
-    return colors.redError;
+  // Helper: Safely convert MongoDB Decimal128 to number
+  const toNum = (val: any): number => {
+    if (val == null) return 0;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return parseFloat(val) || 0;
+    if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+    return parseFloat(String(val)) || 0;
   };
 
-  const getCreditScoreLabel = (score: number) => {
-    if (score >= 750) return 'Xuất sắc';
-    if (score >= 700) return 'Tốt';
-    if (score >= 650) return 'Khá';
-    return 'Trung bình';
+  // Fetch pending loan requests from API - refresh on focus
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+
+      const fetchLoans = async () => {
+        setIsLoading(true);
+        try {
+          const { loanApi } = await import('@/api/loan.api');
+          const response = await loanApi.getPendingRequests();
+          if (!isActive) return;
+          const data = response?.data || response || [];
+          
+          const requests = (Array.isArray(data) ? data : [])
+            .filter((req: any) => {
+              const borrowerId = req.borrowerId?._id || req.borrowerId;
+              return borrowerId !== user?._id;
+            })
+            .map((req: any) => ({
+              id: req._id || req.id,
+              borrowerName: req.borrowerId?.fullName || 'Ẩn danh',
+              amount: toNum(req.loanAmount),
+              interestRate: toNum(req.interestRate),
+              term: toNum(req.durationDays) || 30,
+              purpose: req.purpose || 'Không rõ',
+              creditScore: toNum(req.borrowerId?.creditScore) || 500,
+              funded: Math.floor(Math.random() * 40), // Mock funding progress for UI
+            }));
+          setLoanRequests(requests);
+        } catch (err) {
+          console.error('Error fetching pending requests:', err);
+          if (isActive) setLoanRequests([]);
+        } finally {
+          if (isActive) setIsLoading(false);
+        }
+      };
+
+      fetchLoans();
+
+      return () => {
+        isActive = false;
+      };
+    }, [user?._id])
+  );
+
+  const filters = [
+    { key: 'all', label: 'Tất cả', icon: 'list' },
+    { key: 'low_risk', label: 'An toàn', icon: 'shield-checkmark' },
+    { key: 'high_return', label: 'Lợi nhuận', icon: 'trending-up' },
+  ];
+
+  const getRiskLevel = (score: number) => {
+    if (score >= 750) return { label: 'A', color: colors.greenSuccess, desc: 'Rất thấp' };
+    if (score >= 680) return { label: 'B', color: colors.yellowWarning, desc: 'Trung bình' };
+    return { label: 'C', color: colors.redError, desc: 'Cao' };
   };
 
   const filteredLoans = loanRequests.filter((loan) => {
@@ -112,60 +125,82 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.darkBackground }]} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={colors.textWhite} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.textWhite }]}>Duyệt khoản vay</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      {/* Header with Background Accent */}
+      <View style={styles.headerWrapper}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            onPress={() => navigation.goBack()}
+            style={[styles.iconButton, { backgroundColor: colors.darkSurface }]}
+          >
+            <Ionicons name="chevron-back" size={24} color={colors.textWhite} />
+          </TouchableOpacity>
+          <View style={styles.headerTitleContainer}>
+            <Text style={[styles.headerTitle, { color: colors.textWhite }]}>Thị trường</Text>
+            <Text style={[styles.headerSubtitle, { color: colors.textGray }]}>Duyệt các khoản vay tiềm năng</Text>
+          </View>
+          <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.darkSurface }]}>
+            <Ionicons name="notifications-outline" size={22} color={colors.textWhite} />
+          </TouchableOpacity>
+        </View>
 
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <View style={[styles.searchInputContainer, { backgroundColor: colors.darkSurface }]}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            style={[styles.searchInput, { color: colors.textWhite }]}
-            placeholder="Tìm kiếm..."
-            placeholderTextColor={colors.textGray}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+        {/* Modern Search */}
+        <View style={styles.searchContainer}>
+          <View style={[styles.searchInputContainer, { backgroundColor: colors.darkSurface, borderColor: colors.darkBorder }]}>
+            <Ionicons name="search" size={20} color={colors.textGray} style={styles.searchIcon} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.textWhite }]}
+              placeholder="Tìm theo tên hoặc mục đích..."
+              placeholderTextColor={colors.textGray + '80'}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery !== '' && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={18} color={colors.textGray} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
 
       {/* Filters */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filtersContainer}
-      >
-        {filters.map((filter) => (
-          <TouchableOpacity
-            key={filter.key}
-            style={[
-              styles.filterChip,
-              { backgroundColor: selectedFilter === filter.key ? colors.accentBlue : colors.darkSurface },
-            ]}
-            onPress={() => setSelectedFilter(filter.key as typeof selectedFilter)}
-          >
-            <Text
+      <View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filtersContainer}
+        >
+          {filters.map((filter) => (
+            <TouchableOpacity
+              key={filter.key}
               style={[
-                styles.filterChipText,
-                { color: selectedFilter === filter.key ? colors.textWhite : colors.textGray },
+                styles.filterChip,
+                { 
+                  backgroundColor: selectedFilter === filter.key ? colors.accentBlue : colors.darkSurface,
+                  borderColor: selectedFilter === filter.key ? colors.accentBlue : colors.darkBorder,
+                },
               ]}
+              onPress={() => setSelectedFilter(filter.key as typeof selectedFilter)}
+              activeOpacity={0.7}
             >
-              {filter.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* Results count */}
-      <Text style={[styles.resultsCount, { color: colors.textGray }]}>
-        Tìm thấy {filteredLoans.length} khoản vay
-      </Text>
+              <Ionicons 
+                name={filter.icon as any} 
+                size={16} 
+                color={selectedFilter === filter.key ? colors.textWhite : colors.textGray} 
+                style={{ marginRight: 6 }}
+              />
+              <Text
+                style={[
+                  styles.filterChipText,
+                  { color: selectedFilter === filter.key ? colors.textWhite : colors.textGray },
+                ]}
+              >
+                {filter.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
       {/* Loan List */}
       <ScrollView
@@ -173,81 +208,105 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {filteredLoans.map((loan) => (
-          <Card
-            key={loan.id}
-            style={styles.loanCard}
-            onPress={() => navigation.navigate('LoanDetail', { loanId: loan.id })}
-          >
-            {/* Borrower Info */}
-            <View style={styles.borrowerRow}>
-              <View style={[styles.avatar, { backgroundColor: colors.accentBlue + '30' }]}>
-                <Text style={[styles.avatarText, { color: colors.accentBlue }]}>
-                  {loan.borrowerName.charAt(0)}
-                </Text>
-              </View>
-              <View style={styles.borrowerInfo}>
-                <Text style={[styles.borrowerName, { color: colors.textWhite }]}>{loan.borrowerName}</Text>
-                <Text style={[styles.purpose, { color: colors.textGray }]}>{loan.purpose}</Text>
-              </View>
-              <View style={styles.creditScoreContainer}>
-                <Text
-                  style={[
-                    styles.creditScore,
-                    { color: getCreditScoreColor(loan.creditScore) },
-                  ]}
-                >
-                  {loan.creditScore}
-                </Text>
-                <Text
-                  style={[
-                    styles.creditLabel,
-                    { color: getCreditScoreColor(loan.creditScore) },
-                  ]}
-                >
-                  {getCreditScoreLabel(loan.creditScore)}
-                </Text>
-              </View>
-            </View>
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.resultsCount, { color: colors.textWhite }]}>
+            Khoản vay sẵn có ({filteredLoans.length})
+          </Text>
+          <TouchableOpacity>
+            <Text style={{ color: colors.accentBlue, fontSize: 13 }}>Sắp xếp</Text>
+          </TouchableOpacity>
+        </View>
 
-            {/* Loan Details */}
-            <View style={[styles.detailsGrid, { backgroundColor: colors.darkBackground }]}>
-              <View style={styles.detailItem}>
-                <Text style={[styles.detailLabel, { color: colors.textGray }]}>Số tiền cần vay</Text>
-                <Text style={[styles.detailValue, { color: colors.textWhite }]}>
-                  {formatCurrency(loan.amount)}
-                </Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={[styles.detailLabel, { color: colors.textGray }]}>Lãi suất</Text>
-                <Text style={[styles.detailValueGreen, { color: colors.greenSuccess }]}>{loan.interestRate}%/năm</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={[styles.detailLabel, { color: colors.textGray }]}>Kỳ hạn</Text>
-                <Text style={[styles.detailValue, { color: colors.textWhite }]}>{loan.term} tháng</Text>
-              </View>
-            </View>
+        {filteredLoans.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="search-outline" size={64} color={colors.darkBorder} />
+            <Text style={[styles.emptyText, { color: colors.textGray }]}>Không tìm thấy khoản vay nào phù hợp</Text>
+          </View>
+        ) : (
+          filteredLoans.map((loan) => {
+            const risk = getRiskLevel(loan.creditScore);
+            return (
+              <TouchableOpacity
+                key={loan.id}
+                activeOpacity={0.95}
+                onPress={() => navigation.navigate('LoanDetail', { loanId: loan.id })}
+              >
+                <Card style={[styles.loanCard, { backgroundColor: colors.darkSurface, borderColor: colors.darkBorder }]}>
+                  {/* Card Header: Borrower & Risk */}
+                  <View style={styles.cardHeader}>
+                    <View style={styles.borrowerRow}>
+                      <View style={[styles.avatar, { backgroundColor: colors.accentBlue + '20' }]}>
+                        <Text style={[styles.avatarText, { color: colors.accentBlue }]}>
+                          {loan.borrowerName.charAt(0)}
+                        </Text>
+                      </View>
+                      <View style={styles.borrowerInfo}>
+                        <Text style={[styles.borrowerName, { color: colors.textWhite }]}>{loan.borrowerName}</Text>
+                        <View style={styles.purposeTag}>
+                          <Text style={[styles.purpose, { color: colors.textGray }]}>{loan.purpose}</Text>
+                        </View>
+                      </View>
+                    </View>
+                    <View style={[styles.riskBadge, { backgroundColor: risk.color + '15', borderColor: risk.color }]}>
+                      <Text style={[styles.riskLabel, { color: risk.color }]}>Rủi ro: {risk.label}</Text>
+                    </View>
+                  </View>
 
-            {/* Progress Bar */}
-            <View style={styles.progressContainer}>
-              <View style={styles.progressHeader}>
-                <Text style={[styles.progressLabel, { color: colors.textGray }]}>Đã được tài trợ</Text>
-                <Text style={[styles.progressValue, { color: colors.accentBlue }]}>{loan.funded}%</Text>
-              </View>
-              <View style={[styles.progressBar, { backgroundColor: colors.darkBackground }]}>
-                <View style={[styles.progressFill, { width: `${loan.funded}%`, backgroundColor: colors.accentBlue }]} />
-              </View>
-            </View>
+                  {/* Financial Stats */}
+                  <View style={styles.statsContainer}>
+                    <View style={styles.statItem}>
+                      <Text style={[styles.statLabel, { color: colors.textGray }]}>Số tiền</Text>
+                      <Text style={[styles.statValue, { color: colors.textWhite }]}>
+                        {formatCurrency(loan.amount).replace('.00', '')}
+                      </Text>
+                    </View>
+                    <View style={[styles.statItem, styles.statBorder]}>
+                      <Text style={[styles.statLabel, { color: colors.textGray }]}>Lợi nhuận</Text>
+                      <Text style={[styles.statValue, { color: colors.greenSuccess }]}>{loan.interestRate}%</Text>
+                    </View>
+                    <View style={styles.statItem}>
+                      <Text style={[styles.statLabel, { color: colors.textGray }]}>Kỳ hạn</Text>
+                      <Text style={[styles.statValue, { color: colors.textWhite }]}>{loan.term} ngày</Text>
+                    </View>
+                  </View>
 
-            {/* Invest Button */}
-            <Button
-              title="Đầu tư ngay"
-              onPress={() => navigation.navigate('LoanDetail', { loanId: loan.id })}
-              variant="primary"
-              style={styles.investButton}
-            />
-          </Card>
-        ))}
+                  {/* Funding Progress */}
+                  <View style={styles.progressSection}>
+                    <View style={styles.progressInfo}>
+                      <Text style={[styles.progressText, { color: colors.textGray }]}>Đã tài trợ: {loan.funded}%</Text>
+                      <Text style={[styles.remainingText, { color: colors.accentBlue }]}>
+                        Còn: {formatCurrency(loan.amount * (1 - loan.funded / 100)).replace('.00', '')}
+                      </Text>
+                    </View>
+                    <View style={[styles.progressBarBg, { backgroundColor: colors.darkBackground }]}>
+                      <LinearGradient
+                        colors={[colors.accentBlue, '#3b82f6']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={[styles.progressFill, { width: `${loan.funded}%` }]}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Footer Action */}
+                  <View style={styles.cardFooter}>
+                    <View style={styles.creditInfo}>
+                      <Ionicons name="stats-chart" size={14} color={colors.textGray} />
+                      <Text style={[styles.creditText, { color: colors.textGray }]}>Điểm tín dụng: {loan.creditScore}</Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={[styles.investAction, { backgroundColor: colors.accentBlue }]}
+                      onPress={() => navigation.navigate('LoanDetail', { loanId: loan.id })}
+                    >
+                      <Text style={styles.investActionText}>Xem chi tiết</Text>
+                      <Ionicons name="arrow-forward" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </Card>
+              </TouchableOpacity>
+            );
+          })
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -257,6 +316,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  headerWrapper: {
+    paddingBottom: 10,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -264,152 +326,228 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  backButton: {
-    fontSize: 16,
+  iconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitleContainer: {
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
   },
   searchContainer: {
     paddingHorizontal: 20,
-    marginBottom: 16,
+    marginTop: 10,
   },
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 16,
+    borderWidth: 1,
+    height: 52,
   },
   searchIcon: {
-    fontSize: 16,
-    marginRight: 8,
+    marginRight: 10,
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 14,
-    fontSize: 16,
+    fontSize: 15,
   },
   filtersContainer: {
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingVertical: 12,
   },
   filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
+    paddingVertical: 10,
+    borderRadius: 24,
+    marginRight: 10,
+    borderWidth: 1,
   },
   filterChipText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    marginTop: 10,
   },
   resultsCount: {
-    fontSize: 14,
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
+    paddingBottom: 40,
   },
   loanCard: {
-    marginBottom: 16,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 20,
   },
   borrowerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    flex: 1,
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
   avatarText: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: 'bold',
   },
   borrowerInfo: {
     flex: 1,
   },
   borrowerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
+    fontSize: 17,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  purposeTag: {
+    alignSelf: 'flex-start',
   },
   purpose: {
     fontSize: 13,
   },
-  creditScoreContainer: {
-    alignItems: 'center',
+  riskBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
   },
-  creditScore: {
-    fontSize: 20,
+  riskLabel: {
+    fontSize: 11,
     fontWeight: 'bold',
   },
-  creditLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  detailsGrid: {
+  statsContainer: {
     flexDirection: 'row',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
+    borderRadius: 16,
+    paddingVertical: 14,
+    marginBottom: 20,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
-  detailItem: {
+  statItem: {
     flex: 1,
     alignItems: 'center',
   },
-  detailLabel: {
+  statBorder: {
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  statLabel: {
     fontSize: 11,
-    marginBottom: 4,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  detailValue: {
-    fontSize: 14,
-    fontWeight: '600',
+  statValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
   },
-  detailValueGreen: {
-    fontSize: 14,
-    fontWeight: '600',
+  progressSection: {
+    marginBottom: 20,
   },
-  progressContainer: {
-    marginBottom: 16,
-  },
-  progressHeader: {
+  progressInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 8,
   },
-  progressLabel: {
-    fontSize: 13,
+  progressText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
-  progressValue: {
-    fontSize: 13,
+  remainingText: {
+    fontSize: 12,
     fontWeight: '600',
   },
-  progressBar: {
-    height: 6,
-    borderRadius: 3,
+  progressBarBg: {
+    height: 10,
+    borderRadius: 5,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 5,
   },
-  investButton: {
-    marginTop: 4,
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
-  headerSpacer: {
-    width: 80,
+  creditInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  creditText: {
+    fontSize: 12,
+    marginLeft: 6,
+  },
+  investAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 6,
+  },
+  investActionText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 60,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 15,
   },
 });
 
 export default BrowseLoansScreen;
+

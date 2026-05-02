@@ -5,6 +5,8 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,8 +14,10 @@ import { RouteProp } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import { Card, Button } from '@/components/common';
 import { useTheme } from '@/providers';
+import { useAuth, useOpenBanking } from '@/store';
 import { RootStackParamList } from '@/navigation/types';
 import { formatCurrency } from '@/utils/formatters';
+import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 type LoanDetailScreenProps = {
@@ -26,59 +30,323 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
   route,
 }) => {
   const { colors } = useTheme();
+  const { user } = useAuth();
+  const { connections } = useOpenBanking();
   const { loanId } = route.params;
+  const [loan, setLoan] = React.useState<any>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [isDeleting, setIsDeleting] = React.useState(false);
 
-  // Mock data - in real app, fetch from API using loanId
-  const loan = {
-    id: loanId,
-    title: 'Khoản vay kinh doanh',
-    borrowerName: 'Nguyễn Văn A',
-    borrowerAvatar: 'N',
-    amount: 50000000,
-    funded: 32500000,
-    interestRate: 12,
-    term: 12,
-    monthlyPayment: 4440000,
-    purpose: 'Kinh doanh',
-    description:
-      'Mở rộng cửa hàng kinh doanh thiết bị điện tử tại khu vực quận 7. Dự kiến sẽ tăng doanh thu 30% sau 6 tháng.',
-    creditScore: 750,
-    status: 'funding' as const,
-    createdAt: new Date('2024-01-15'),
-    investors: [
-      { name: 'Trần Văn B', amount: 15000000 },
-      { name: 'Lê Thị C', amount: 10000000 },
-      { name: 'Phạm Văn D', amount: 7500000 },
-    ],
+  // Helper: Safely convert MongoDB Decimal128 to number
+  const toNum = (val: any): number => {
+    if (val == null) return 0;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return parseFloat(val) || 0;
+    if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+    return parseFloat(String(val)) || 0;
   };
 
-  const fundingPercentage = (loan.funded / loan.amount) * 100;
-  const remainingAmount = loan.amount - loan.funded;
+  const fetchLoan = React.useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const { loanApi } = await import('@/api/loan.api');
+      // Try loan detail first, fallback to request detail
+      let data: any;
+      let dataType: 'loan' | 'request' = 'loan';
+      try {
+        data = await loanApi.getLoanDetail(loanId);
+      } catch {
+        data = await loanApi.getRequestDetail(loanId);
+        dataType = 'request';
+      }
+      const d = data?.data || data;
+
+      // Determine borrower ID (could be populated object or string)
+      let borrowerId: string | null = null;
+      if (d.borrowerId) {
+        if (typeof d.borrowerId === 'object' && d.borrowerId !== null) {
+          borrowerId = String(d.borrowerId._id || d.borrowerId.id || '');
+        } else {
+          borrowerId = String(d.borrowerId);
+        }
+      }
+
+      // Determine lender ID
+      let lenderId: string | null = null;
+      if (d.lenderId) {
+        if (typeof d.lenderId === 'object' && d.lenderId !== null) {
+          lenderId = String(d.lenderId._id || d.lenderId.id || '');
+        } else {
+          lenderId = String(d.lenderId);
+        }
+      }
+
+      setLoan({
+        id: loanId,
+        title: d.purpose ? `Khoản vay ${d.purpose}` : 'Chi tiết khoản vay',
+        borrowerName: typeof d.borrowerId === 'object' ? (d.borrowerId?.fullName || 'Ẩn danh') : 'Ẩn danh',
+        borrowerAvatar: typeof d.borrowerId === 'object' ? (d.borrowerId?.fullName || 'A').charAt(0) : 'A',
+        borrowerId: borrowerId,
+        lenderId: lenderId,
+        amount: toNum(d.loanAmount || d.principalAmount),
+        funded: toNum(d.amountPaid) || 0,
+        interestRate: toNum(d.interestRate),
+        term: toNum(d.durationDays),
+        monthlyPayment: 0,
+        purpose: d.purpose || 'Cá nhân',
+        description: d.purposeDescription || d.purpose || 'Không có mô tả',
+        creditScore: typeof d.borrowerId === 'object' ? (toNum(d.borrowerId?.creditScore) || 0) : 0,
+        status: d.status || 'pending',
+        createdAt: new Date(d.createdAt),
+        isRequest: dataType === 'request',
+        dataType,
+      });
+    } catch (err) {
+      console.error('Error fetching loan:', err);
+      setLoan({
+        id: loanId,
+        title: 'Khoản vay',
+        borrowerName: 'N/A',
+        borrowerAvatar: '?',
+        borrowerId: null,
+        lenderId: null,
+        amount: 0,
+        funded: 0,
+        interestRate: 0,
+        term: 0,
+        monthlyPayment: 0,
+        purpose: 'N/A',
+        description: 'Không thể tải dữ liệu',
+        creditScore: 0,
+        status: 'unknown',
+        createdAt: new Date(),
+        isRequest: false,
+        dataType: 'loan',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loanId]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchLoan();
+    }, [fetchLoan])
+  );
+
+  if (isLoading || !loan) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.darkBackground }]} edges={['top']}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: colors.textGray }}>Đang tải...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const fundingPercentage = loan.amount > 0 ? Math.min((loan.funded / loan.amount) * 100, 100) : 0;
+  const remainingAmount = Math.max(loan.amount - loan.funded, 0);
+
+  // Check if current user is the borrower (owner of this loan/request)
+  const myUserId = user?._id ? String(user._id) : null;
+  const loanBorrowerId = loan.borrowerId ? String(loan.borrowerId) : null;
+  const loanLenderId = loan.lenderId ? String(loan.lenderId) : null;
+
+  console.log('🔍 Ownership check:', {
+    myUserId,
+    loanBorrowerId,
+    loanLenderId,
+    match: myUserId === loanBorrowerId,
+    status: loan.status,
+    isRequest: loan.isRequest,
+  });
+
+  const isMyLoan = !!(myUserId && loanBorrowerId && myUserId === loanBorrowerId);
+  // Check if current user is the lender
+  const isMyInvestment = !!(myUserId && loanLenderId && myUserId === loanLenderId);
+  // Check if the request has been funded (has a lender)
+  const isFunded = !!loan.lenderId || loan.status === 'funded' || loan.status === 'active';
+  // Check if this is a pending request (not yet funded)
+  const isPending = loan.status === 'pending' || loan.status === 'approved' || loan.status === 'funding';
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'funding':
-        return colors.yellowWarning;
-      case 'active':
-        return colors.greenSuccess;
-      case 'completed':
-        return colors.accentBlue;
-      default:
-        return colors.textGray;
+      case 'pending': return colors.yellowWarning;
+      case 'approved': return colors.greenSuccess;
+      case 'funding': return colors.yellowWarning;
+      case 'active': return colors.greenSuccess;
+      case 'funded': return colors.greenSuccess;
+      case 'repaid': return colors.accentBlue;
+      case 'completed': return colors.accentBlue;
+      case 'cancelled': return colors.redError;
+      default: return colors.textGray;
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'funding':
-        return 'Đang gọi vốn';
-      case 'active':
-        return 'Đang hoạt động';
-      case 'completed':
-        return 'Hoàn thành';
-      default:
-        return status;
+      case 'pending': return 'Đang chờ';
+      case 'approved': return 'Đã duyệt';
+      case 'funding': return 'Đang gọi vốn';
+      case 'active': return 'Đang hoạt động';
+      case 'funded': return 'Đã cấp vốn';
+      case 'repaid': return 'Đã trả nợ';
+      case 'completed': return 'Hoàn thành';
+      case 'cancelled': return 'Đã hủy';
+      default: return status;
     }
+  };
+
+  // Handle delete/cancel loan request
+  const handleDelete = () => {
+    Alert.alert(
+      '⚠️ Xác nhận xóa',
+      'Bạn có chắc muốn xóa yêu cầu vay này? Hành động này không thể hoàn tác.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              const { loanApi } = await import('@/api/loan.api');
+              await loanApi.deleteRequest(loanId);
+              Alert.alert('✅ Thành công', 'Đã xóa yêu cầu vay.', [
+                { text: 'OK', onPress: () => navigation.goBack() },
+              ]);
+            } catch (error: any) {
+              const msg = error?.response?.data?.message || 'Không thể xóa yêu cầu vay';
+              Alert.alert('❌ Lỗi', msg);
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // Handle edit loan request - navigate to CreateLoan with edit params
+  const handleEdit = () => {
+    navigation.navigate('EditLoan', {
+      requestId: loanId,
+      currentData: {
+        amount: loan.amount,
+        interestRate: loan.interestRate,
+        durationDays: loan.term,
+        purpose: loan.purpose,
+        description: loan.description,
+      },
+    });
+  };
+
+  // Handle fund/invest in loan
+  const handleInvest = () => {
+    if (user?.kycStatus !== 'verified') {
+      Alert.alert(
+        'Yêu cầu xác thực',
+        'Bạn cần hoàn thành xác thực danh tính (KYC) trước khi cho vay.',
+        [
+          { text: 'Để sau', style: 'cancel' },
+          { text: 'Xác thực ngay', onPress: () => navigation.navigate('KYCVerification' as any) }
+        ]
+      );
+      return;
+    }
+    if (connections.length === 0) {
+      Alert.alert(
+        'Yêu cầu liên kết ngân hàng',
+        'Bạn cần liên kết tài khoản ngân hàng để đảm bảo luồng nhận tiền lãi.',
+        [
+          { text: 'Để sau', style: 'cancel' },
+          { text: 'Liên kết ngay', onPress: () => navigation.navigate('LinkBank' as any) }
+        ]
+      );
+      return;
+    }
+    navigation.navigate('FundLoan', { requestId: loanId });
+  };
+
+  // Handle repay
+  const handleRepay = () => {
+    navigation.navigate('RepayLoan', { loanId: loanId });
+  };
+
+  // Determine which buttons to show
+  const renderFooterButtons = () => {
+    // Case 1: My loan request, pending, not funded → Show Edit + Delete
+    if (isMyLoan && isPending && !isFunded) {
+      return (
+        <View style={[styles.footer, { backgroundColor: colors.darkBackground, borderTopColor: colors.darkBorder }]}>
+          <View style={styles.footerButtonRow}>
+            <TouchableOpacity
+              style={[styles.footerButton, styles.editButton, { borderColor: colors.accentBlue }]}
+              onPress={handleEdit}
+            >
+              <Ionicons name="create-outline" size={20} color={colors.accentBlue} />
+              <Text style={[styles.footerButtonText, { color: colors.accentBlue }]}>Sửa</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.footerButton, styles.deleteButton, { borderColor: colors.redError }]}
+              onPress={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <ActivityIndicator size="small" color={colors.redError} />
+              ) : (
+                <>
+                  <Ionicons name="trash-outline" size={20} color={colors.redError} />
+                  <Text style={[styles.footerButtonText, { color: colors.redError }]}>Xóa</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    // Case 2: My loan, funded/active → Show Repay button
+    if (isMyLoan && (loan.status === 'active' || loan.status === 'funded')) {
+      return (
+        <View style={[styles.footer, { backgroundColor: colors.darkBackground, borderTopColor: colors.darkBorder }]}>
+          <Button
+            title="💰 Trả nợ"
+            onPress={handleRepay}
+            style={styles.investButton}
+          />
+        </View>
+      );
+    }
+
+    // Case 3: Other's loan request, pending → Show Invest button (not my own request)
+    if (!isMyLoan && isPending && loan.isRequest) {
+      return (
+        <View style={[styles.footer, { backgroundColor: colors.darkBackground, borderTopColor: colors.darkBorder }]}>
+          <Button
+            title="🚀 Đầu tư ngay"
+            onPress={handleInvest}
+            style={styles.investButton}
+          />
+        </View>
+      );
+    }
+
+    // Case 4: I'm the lender, loan is active → Show info (can view repayment progress)
+    if (isMyInvestment && loan.status === 'active') {
+      return (
+        <View style={[styles.footer, { backgroundColor: colors.darkBackground, borderTopColor: colors.darkBorder }]}>
+          <View style={[styles.infoFooter, { backgroundColor: colors.accentBlue + '15' }]}>
+            <Ionicons name="information-circle-outline" size={20} color={colors.accentBlue} />
+            <Text style={[styles.infoFooterText, { color: colors.accentBlue }]}>
+              Đang chờ người vay trả nợ
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -97,6 +365,20 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Ownership Badge */}
+        {isMyLoan && (
+          <View style={[styles.ownershipBadge, { backgroundColor: colors.accentBlue + '20' }]}>
+            <Ionicons name="person-outline" size={16} color={colors.accentBlue} />
+            <Text style={[styles.ownershipText, { color: colors.accentBlue }]}>Khoản vay của bạn</Text>
+          </View>
+        )}
+        {isMyInvestment && (
+          <View style={[styles.ownershipBadge, { backgroundColor: colors.greenSuccess + '20' }]}>
+            <Ionicons name="wallet-outline" size={16} color={colors.greenSuccess} />
+            <Text style={[styles.ownershipText, { color: colors.greenSuccess }]}>Bạn đã đầu tư</Text>
+          </View>
+        )}
+
         {/* Borrower Info */}
         <Card style={styles.borrowerCard}>
           <View style={styles.borrowerRow}>
@@ -105,10 +387,12 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
             </View>
             <View style={styles.borrowerInfo}>
               <Text style={[styles.borrowerName, { color: colors.textWhite }]}>{loan.borrowerName}</Text>
-              <View style={styles.creditScoreRow}>
-                <Text style={[styles.creditScoreLabel, { color: colors.textGray }]}>Điểm tín dụng:</Text>
-                <Text style={[styles.creditScore, { color: colors.greenSuccess }]}>{loan.creditScore}</Text>
-              </View>
+              {loan.creditScore > 0 && (
+                <View style={styles.creditScoreRow}>
+                  <Text style={[styles.creditScoreLabel, { color: colors.textGray }]}>Điểm tín dụng:</Text>
+                  <Text style={[styles.creditScore, { color: colors.greenSuccess }]}>{loan.creditScore}</Text>
+                </View>
+              )}
             </View>
             <View
               style={[
@@ -132,27 +416,26 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
           end={{ x: 1, y: 1 }}
           style={styles.amountCard}
         >
-          <Text style={styles.amountLabel}>Số tiền cần vay</Text>
-          <Text style={[styles.amountValue, { color: colors.textWhite }]}>{formatCurrency(loan.amount)}</Text>
+          <Text style={styles.amountLabel}>Số tiền vay</Text>
+          <Text style={[styles.amountValue, { color: colors.textWhite }]}>{loan.amount} USDT</Text>
 
-          <View style={styles.fundingProgress}>
-            <View style={styles.fundingHeader}>
-              <Text style={styles.fundingLabel}>
-                Đã huy động: {formatCurrency(loan.funded)}
-              </Text>
-              <Text style={[styles.fundingPercentage, { color: colors.textWhite }]}>
-                {fundingPercentage.toFixed(0)}%
-              </Text>
+          {loan.funded > 0 && (
+            <View style={styles.fundingProgress}>
+              <View style={styles.fundingHeader}>
+                <Text style={styles.fundingLabel}>
+                  Đã trả: {loan.funded} USDT
+                </Text>
+                <Text style={[styles.fundingPercentage, { color: colors.textWhite }]}>
+                  {fundingPercentage.toFixed(0)}%
+                </Text>
+              </View>
+              <View style={styles.progressBar}>
+                <View
+                  style={[styles.progressFill, { width: `${fundingPercentage}%`, backgroundColor: colors.textWhite }]}
+                />
+              </View>
             </View>
-            <View style={styles.progressBar}>
-              <View
-                style={[styles.progressFill, { width: `${fundingPercentage}%`, backgroundColor: colors.textWhite }]}
-              />
-            </View>
-            <Text style={styles.remainingText}>
-              Còn thiếu: {formatCurrency(remainingAmount)}
-            </Text>
-          </View>
+          )}
         </LinearGradient>
 
         {/* Loan Details */}
@@ -171,58 +454,18 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
 
           <View style={styles.detailRow}>
             <Text style={[styles.detailLabel, { color: colors.textGray }]}>Kỳ hạn</Text>
-            <Text style={[styles.detailValue, { color: colors.textWhite }]}>{loan.term} tháng</Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <Text style={[styles.detailLabel, { color: colors.textGray }]}>Trả hàng tháng</Text>
-            <Text style={[styles.detailValue, { color: colors.textWhite }]}>
-              {formatCurrency(loan.monthlyPayment)}
-            </Text>
+            <Text style={[styles.detailValue, { color: colors.textWhite }]}>{loan.term} ngày</Text>
           </View>
 
           <View style={[styles.divider, { backgroundColor: colors.darkBorder }]} />
 
-          <Text style={[styles.descriptionTitle, { color: colors.textWhite }]}>Mô tả chi tiết</Text>
+          <Text style={[styles.descriptionTitle, { color: colors.textWhite }]}>Mô tả</Text>
           <Text style={[styles.description, { color: colors.textGray }]}>{loan.description}</Text>
-        </Card>
-
-        {/* Investors */}
-        <Card style={styles.investorsCard}>
-          <Text style={[styles.cardTitle, { color: colors.textWhite }]}>
-            Nhà đầu tư ({loan.investors.length})
-          </Text>
-
-          {loan.investors.map((investor, index) => (
-            <View key={index} style={styles.investorRow}>
-              <View style={[styles.investorAvatar, { backgroundColor: colors.darkBackground }]}>
-                <Text style={[styles.investorAvatarText, { color: colors.textWhite }]}>
-                  {investor.name.charAt(0)}
-                </Text>
-              </View>
-              <Text style={[styles.investorName, { color: colors.textWhite }]}>{investor.name}</Text>
-              <Text style={[styles.investorAmount, { color: colors.greenSuccess }]}>
-                {formatCurrency(investor.amount)}
-              </Text>
-            </View>
-          ))}
         </Card>
       </ScrollView>
 
-      {/* Footer Actions */}
-      <View style={[styles.footer, { backgroundColor: colors.darkBackground, borderTopColor: colors.darkBorder }]}>
-        <Button
-          title="Đầu tư ngay"
-          onPress={() =>
-            navigation.navigate('ConfirmTransaction', {
-              loanId: loan.id,
-              amount: remainingAmount,
-              type: 'invest',
-            })
-          }
-          style={styles.investButton}
-        />
-      </View>
+      {/* Footer Actions - dynamic based on ownership and status */}
+      {renderFooterButtons()}
     </SafeAreaView>
   );
 };
@@ -252,6 +495,20 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
     paddingBottom: 120,
+  },
+  ownershipBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+    marginBottom: 12,
+  },
+  ownershipText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   borrowerCard: {
     marginBottom: 16,
@@ -386,39 +643,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
   },
-  investorsCard: {
-    marginBottom: 16,
-  },
-  investorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  investorAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  investorAvatarText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  investorName: {
-    flex: 1,
-    fontSize: 14,
-  },
-  investorAmount: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
   footer: {
     padding: 20,
     borderTopWidth: 1,
   },
+  footerButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  footerButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    gap: 8,
+  },
+  editButton: {
+    backgroundColor: 'transparent',
+  },
+  deleteButton: {
+    backgroundColor: 'transparent',
+  },
+  footerButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
   investButton: {},
+  infoFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  infoFooterText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
 });
 
 export default LoanDetailScreen;

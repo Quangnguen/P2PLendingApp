@@ -20,13 +20,25 @@ export const WALLET_CONNECT_METADATA = {
 };
 
 export const SUPPORTED_CHAINS = {
-  // Sepolia Testnet (đang dùng để test)
+  // Ganache Local (đang dùng để dev/test)
+  GANACHE: {
+    id: 1337,
+    name: 'Ganache Local',
+    // Sử dụng localhost cho cả Android (physical device) và iOS
+    // Với physical device: cần chạy `adb reverse tcp:7545 tcp:7545` trước
+    // để forward localhost:7545 trên điện thoại → 127.0.0.1:7545 trên PC
+    // Với Emulator: dùng 10.0.2.2 (Android) hoặc 127.0.0.1 (iOS)
+    rpcUrl: 'http://10.0.2.2:7545',
+    blockExplorer: '', // Ganache không có block explorer
+    wcNamespace: 'eip155:1337',
+  },
+  
+  // Sepolia Testnet (backup - không dùng nữa)
   SEPOLIA: {
     id: 11155111,
     name: 'Sepolia',
     rpcUrl: 'https://sepolia.infura.io/v3/03eb07775e554e7cb53082b6e55b0e2e',
     blockExplorer: 'https://sepolia.etherscan.io',
-    // Format cho WalletConnect
     wcNamespace: 'eip155:11155111',
   },
   
@@ -40,8 +52,10 @@ export const SUPPORTED_CHAINS = {
   },
 };
 
-// Chain đang sử dụng
-export const CURRENT_CHAIN = SUPPORTED_CHAINS.SEPOLIA;
+// ============================================================
+// Chain đang sử dụng — ĐỔI Ở ĐÂY khi muốn switch network
+// ============================================================
+export const CURRENT_CHAIN = SUPPORTED_CHAINS.GANACHE;
 
 export const PROVIDER_CONFIG = {
   // Project ID từ WalletConnect Cloud
@@ -50,7 +64,7 @@ export const PROVIDER_CONFIG = {
   // Metadata của app
   metadata: WALLET_CONNECT_METADATA,
   
-  // Các chain được hỗ trợ (format: ["eip155:11155111"])
+  // Các chain được hỗ trợ (format: ["eip155:1337"])
   chains: [CURRENT_CHAIN.wcNamespace],
   
   // Các method mà app cần quyền sử dụng
@@ -71,9 +85,12 @@ export const PROVIDER_CONFIG = {
   ],
 };
 
+// ============================================================
+// Contract Addresses — cập nhật sau khi deploy lên Ganache
+// ============================================================
 export const CONTRACT_ADDRESSES = {
-  USDT: '0xA61EB64B9D110A21254Fdb9BD7cDf4FE8f29B6D9',
-  PRICE_ORACLE: '0x9E016fC5772eC8e5A5d0D743FbF340Bd5cE5813f',
-  COLLATERAL_MANAGER: '0xe01a408C1d0e941d6cF29f1CBa8723ed7827379B',
-  P2P_LENDING: '0x302dEb3eB093D20CA0759C11bFde6b4a83456841',
+  USDT: '0x857e0F68a924683409BC508d7442aAC6abe0b762',
+  PRICE_ORACLE: '0xbd4394856c8b4Da879EfBA92cE2A10e4A6b88F64',
+  COLLATERAL_MANAGER: '0xA2b99329a9a9085bEE555Aa0dd981d728909C080',
+  P2P_LENDING: '0xFb895590BDeC93D62E2cd77FC837559a2eE5ef5E',
 };

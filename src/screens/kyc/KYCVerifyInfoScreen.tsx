@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -14,24 +15,31 @@ import { useTheme } from '../../providers';
 import { RootStackParamList } from '../../navigation/types';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
+import { RouteProp } from '@react-navigation/native';
+
 type KYCVerifyInfoScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'KYCVerifyInfo'>;
+  route: RouteProp<RootStackParamList, 'KYCVerifyInfo'>;
 };
 
-const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation }) => {
+const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
-  // Sample extracted data - trong thực tế sẽ lấy từ OCR/QR scan
-  const [fullName, setFullName] = useState('NGUYỄN VĂN A');
-  const [idNumber, setIdNumber] = useState('001234567890');
-  const [dateOfBirth, setDateOfBirth] = useState('01/01/1990');
-  const [gender, setGender] = useState('Nam');
-  const [nationality, setNationality] = useState('Việt Nam');
-  const [placeOfOrigin, setPlaceOfOrigin] = useState('Hà Nội');
-  const [placeOfResidence, setPlaceOfResidence] = useState('123 Đường ABC, Quận XYZ, TP. Hồ Chí Minh');
-  const [expiryDate, setExpiryDate] = useState('01/01/2030');
+  const { idInfo, frontImageUri, backImageUri } = route.params;
+
+  // State trích xuất từ OCR
+  const [fullName, setFullName] = useState(idInfo.name || '');
+  const [idNumber, setIdNumber] = useState(idInfo.id || '');
+  const [dateOfBirth, setDateOfBirth] = useState(idInfo.dob || '');
+  const [gender, setGender] = useState(idInfo.sex || '');
+  const [nationality, setNationality] = useState(idInfo.nationality || 'Việt Nam');
+  const [placeOfOrigin, setPlaceOfOrigin] = useState(idInfo.home || '');
+  const [placeOfResidence, setPlaceOfResidence] = useState(idInfo.address || '');
+  const [expiryDate, setExpiryDate] = useState(idInfo.doe || '');
 
   const handleConfirm = () => {
-    navigation.navigate('KYCFaceScan');
+    navigation.navigate('KYCFaceScan', {
+      frontImageUri: frontImageUri
+    });
   };
 
   const renderTextField = (
@@ -108,11 +116,19 @@ const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation })
         <Text style={[styles.sectionTitle, { color: colors.textWhite }]}>Ảnh giấy tờ</Text>
         <View style={styles.imagesContainer}>
           <View style={[styles.imagePreview, { backgroundColor: colors.darkSurface, borderColor: colors.darkBorder }]}>
-            <Text style={styles.imagePreviewIcon}>🪪</Text>
+            {frontImageUri ? (
+              <Image source={{ uri: frontImageUri }} style={styles.previewImage} />
+            ) : (
+              <Text style={styles.imagePreviewIcon}>🪪</Text>
+            )}
             <Text style={[styles.imagePreviewLabel, { color: colors.textGray }]}>Mặt trước</Text>
           </View>
           <View style={[styles.imagePreview, { backgroundColor: colors.darkSurface, borderColor: colors.darkBorder }]}>
-            <Text style={styles.imagePreviewIcon}>📱</Text>
+            {backImageUri ? (
+              <Image source={{ uri: backImageUri }} style={styles.previewImage} />
+            ) : (
+              <Text style={styles.imagePreviewIcon}>📱</Text>
+            )}
             <Text style={[styles.imagePreviewLabel, { color: colors.textGray }]}>Mặt sau</Text>
           </View>
         </View>
@@ -237,6 +253,13 @@ const styles = StyleSheet.create({
     marginRight: 12,
     alignItems: 'center',
     borderWidth: 1,
+    overflow: 'hidden',
+  },
+  previewImage: {
+    width: '100%',
+    height: 60,
+    borderRadius: 4,
+    marginBottom: 8,
   },
   imagePreviewIcon: {
     fontSize: 32,

@@ -12,8 +12,13 @@ import {
 
 export const authApi = {
   login: async (data: LoginRequest): Promise<AuthResponse | LoginOtpRequiredResponse> => {
-    const response = await apiClient.post<ApiResponse<AuthResponse | LoginOtpRequiredResponse>>('/auth/login', data);
-    return response.data.data;
+    const response = await apiClient.post<ApiResponse<any>>('/auth/login', data);
+    const result = response.data.data;
+    // Map user.id → user._id nếu có user object
+    if (result?.user) {
+      result.user = { ...result.user, _id: result.user._id || result.user.id };
+    }
+    return result;
   },
 
   register: async (data: RegisterRequest): Promise<{ message: string }> => {
@@ -27,8 +32,13 @@ export const authApi = {
   },
 
   verifyLoginOtp: async (data: VerifyLoginOtpRequest): Promise<AuthResponse> => {
-    const response = await apiClient.post<ApiResponse<AuthResponse>>('/auth/verify-login-otp', data);
-    return response.data.data;
+    const response = await apiClient.post<ApiResponse<any>>('/auth/verify-login-otp', data);
+    const result = response.data.data;
+    // Map user.id → user._id
+    if (result?.user) {
+      result.user = { ...result.user, _id: result.user._id || result.user.id };
+    }
+    return result;
   },
 
   resendOtp: async (email: string): Promise<{ message: string }> => {
@@ -41,8 +51,13 @@ export const authApi = {
   },
 
   getMe: async (): Promise<User> => {
-    const response = await apiClient.get<ApiResponse<User>>('/auth/me');
-    return response.data.data;
+    const response = await apiClient.get<ApiResponse<any>>('/auth/me');
+    const data = response.data.data;
+    // Backend trả 'id' (từ BaseResponseDto), frontend cần '_id'
+    return {
+      ...data,
+      _id: data._id || data.id,
+    };
   },
 };
 

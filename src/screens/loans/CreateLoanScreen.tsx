@@ -26,8 +26,10 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWeb3 } from '../../providers';
 import {
   calculateInterest,
@@ -39,41 +41,27 @@ import {
   formatCurrency,
 } from '../../utils/loanCalculations';
 import { LOAN_CONFIG } from '../../utils/constants';
-// import { LoanDuration, CreateLoanRequest } from '../../types/loan.types';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useAuth, useOpenBanking } from '../../store';
 
-
-const MOCK_CREDIT_SCORE = 680; // Điểm tín dụng giả
-const MOCK_ETH_PRICE = '2500'; // Giá ETH giả (USDT)
-
-// =====================
-// COMPONENT
-// =====================
+const MOCK_CREDIT_SCORE = 680;
+const MOCK_ETH_PRICE = '2500';
 
 const CreateLoanScreen: React.FC = () => {
   const navigation = useNavigation();
   const { balances } = useWeb3();
+  const { user } = useAuth();
+  const { connections } = useOpenBanking();
 
   // =====================
   // STATE
   // =====================
-  
-  /**
-   * Form data
-   */
-  const [amount, setAmount] = useState(''); // Số tiền vay
-  const [duration, setDuration] = useState<number>(30); // Thời hạn (ngày)
-  const [interestRate, setInterestRate] = useState(''); // Lãi suất
-  
-  /**
-   * Calculated values (tính toán từ form)
-   */
+  const [amount, setAmount] = useState('');
+  const [duration, setDuration] = useState<number>(30);
+  const [interestRate, setInterestRate] = useState('');
   const [requiredCollateral, setRequiredCollateral] = useState('0');
   const [interestAmount, setInterestAmount] = useState('0');
   const [totalRepayment, setTotalRepayment] = useState('0');
-  
-  /**
-   * UI state
-   */
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPreview, setShowPreview] = useState(false);
@@ -81,142 +69,116 @@ const CreateLoanScreen: React.FC = () => {
   // =====================
   // EFFECTS
   // =====================
-  
-  /**
-   * Tự động tính toán khi user thay đổi input
-   * 
-   * useEffect sẽ chạy mỗi khi amount, duration, hoặc interestRate thay đổi
-   */
   useEffect(() => {
     if (amount && interestRate) {
-      // Tính số ETH cần thế chấp
       const collateral = calculateRequiredCollateral(
         amount,
         MOCK_ETH_PRICE,
         LOAN_CONFIG.MIN_COLLATERAL_RATIO
       );
       setRequiredCollateral(collateral);
-      
-      // Tính tiền lãi
       const interest = calculateInterest(amount, parseFloat(interestRate), duration);
       setInterestAmount(interest);
-      
-      // Tính tổng tiền phải trả
       const total = calculateRepaymentAmount(amount, parseFloat(interestRate), duration);
       setTotalRepayment(total);
     } else {
-      // Reset nếu input trống
       setRequiredCollateral('0');
       setInterestAmount('0');
       setTotalRepayment('0');
     }
   }, [amount, duration, interestRate]);
 
-  /**
-   * Gợi ý lãi suất dựa trên điểm tín dụng
-   */
   useEffect(() => {
     const suggested = getSuggestedInterestRate(MOCK_CREDIT_SCORE);
-    // Đặt lãi suất mặc định là trung bình của khoảng gợi ý
     const defaultRate = Math.round((suggested.min + suggested.max) / 2);
     setInterestRate(defaultRate.toString());
   }, []);
 
+  // Check prerequisites
+  useEffect(() => {
+    if (user && user.kycStatus !== 'verified') {
+      Alert.alert(
+        'Yêu cầu xác thực',
+        'Bạn cần hoàn thành KYC trước khi tạo yêu cầu vay.',
+        [{ text: 'Quay lại', onPress: () => navigation.goBack() }]
+      );
+    } else if (connections && connections.length === 0) {
+      Alert.alert(
+        'Yêu cầu liên kết',
+        'Bạn cần liên kết ngân hàng trước khi tạo yêu cầu vay.',
+        [{ text: 'Quay lại', onPress: () => navigation.goBack() }]
+      );
+    }
+  }, [user, connections, navigation]);
+
   // =====================
   // HANDLERS
   // =====================
-  
-  /**
-   * Xử lý khi user thay đổi số tiền
-   */
+  const handleGoBack = () => {
+    navigation.goBack();
+  };
+
   const handleAmountChange = (text: string) => {
-    // Chỉ cho phép nhập số và dấu chấm
     const cleaned = text.replace(/[^0-9.]/g, '');
     setAmount(cleaned);
-    
-    // Xóa lỗi cũ
     if (errors.amount) {
       setErrors(prev => ({ ...prev, amount: '' }));
     }
   };
 
-  /**
-   * Xử lý khi user thay đổi lãi suất
-   */
   const handleInterestRateChange = (text: string) => {
     const cleaned = text.replace(/[^0-9.]/g, '');
     setInterestRate(cleaned);
-    
     if (errors.interestRate) {
       setErrors(prev => ({ ...prev, interestRate: '' }));
     }
   };
 
-  /**
-   * Validate toàn bộ form
-   * 
-   * @returns true nếu form hợp lệ
-   */
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
-    
-    // Validate số tiền
     const amountValidation = validateLoanAmount(amount);
     if (!amountValidation.isValid) {
       newErrors.amount = amountValidation.error || 'Số tiền không hợp lệ';
     }
-    
-    // Validate lãi suất
     const rateValidation = validateInterestRate(parseFloat(interestRate));
     if (!rateValidation.isValid) {
       newErrors.interestRate = rateValidation.error || 'Lãi suất không hợp lệ';
     }
-    
-    // Validate ETH balance (đủ thế chấp không)
     const ethBalance = parseFloat(balances.eth);
     const required = parseFloat(requiredCollateral);
     if (ethBalance < required) {
       newErrors.collateral = `Không đủ ETH để thế chấp. Cần ${requiredCollateral} ETH, bạn có ${balances.eth} ETH`;
     }
-    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  /**
-   * Hiện preview trước khi xác nhận
-   */
   const handlePreview = () => {
     if (validateForm()) {
       setShowPreview(true);
     }
   };
 
-  /**
-   * Xác nhận tạo khoản vay
-   */
   const handleConfirm = async () => {
     setIsLoading(true);
-    
     try {
-      // TODO: Gọi smart contract để tạo loan
-      // Sẽ implement ở phần sau
-      
-      // Giả lập delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+      const { loanApi } = await import('../../api/loan.api');
+      await loanApi.createLoanRequest({
+        loanAmount: parseFloat(amount),
+        interestRate: parseFloat(interestRate),
+        durationDays: duration,
+        purpose: 'personal',
+        collateralType: 'crypto',
+        collateralAmount: parseFloat(requiredCollateral),
+      });
       Alert.alert(
         '✅ Thành công',
         'Yêu cầu vay đã được tạo. Đang chờ người cho vay.',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ]
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (error: any) {
-      Alert.alert('❌ Lỗi', error.message || 'Không thể tạo yêu cầu vay');
+      const msg = error?.response?.data?.message || error.message || 'Không thể tạo yêu cầu vay';
+      Alert.alert('❌ Lỗi', msg);
     } finally {
       setIsLoading(false);
       setShowPreview(false);
@@ -226,68 +188,41 @@ const CreateLoanScreen: React.FC = () => {
   // =====================
   // RENDER FUNCTIONS
   // =====================
-  
-  /**
-   * Render chip chọn thời hạn
-   */
   const renderDurationChip = (days: number, label: string) => {
     const isSelected = duration === days;
-    
     return (
       <TouchableOpacity
         key={days}
-        style={[
-          styles.durationChip,
-          isSelected && styles.durationChipSelected,
-        ]}
+        style={[styles.durationChip, isSelected && styles.durationChipSelected]}
         onPress={() => setDuration(days)}
         activeOpacity={0.7}>
-        <Text
-          style={[
-            styles.durationChipText,
-            isSelected && styles.durationChipTextSelected,
-          ]}>
+        <Text style={[styles.durationChipText, isSelected && styles.durationChipTextSelected]}>
           {label}
         </Text>
       </TouchableOpacity>
     );
   };
 
-  /**
-   * Render preview modal
-   */
   const renderPreviewModal = () => {
     if (!showPreview) return null;
-
     return (
       <View style={styles.previewOverlay}>
         <View style={styles.previewModal}>
           <Text style={styles.previewTitle}>📋 Xác nhận yêu cầu vay</Text>
-          
           <View style={styles.previewContent}>
             <PreviewRow label="Số tiền vay" value={`${formatCurrency(amount)} USDT`} />
             <PreviewRow label="Thời hạn" value={`${duration} ngày`} />
             <PreviewRow label="Lãi suất" value={`${interestRate}%/năm`} />
             <PreviewRow label="Tiền lãi" value={`${formatCurrency(interestAmount)} USDT`} />
-            <PreviewRow 
-              label="Tổng trả" 
-              value={`${formatCurrency(totalRepayment)} USDT`} 
-              highlight 
-            />
+            <PreviewRow label="Tổng trả" value={`${formatCurrency(totalRepayment)} USDT`} highlight />
             <View style={styles.previewDivider} />
-            <PreviewRow 
-              label="ETH thế chấp" 
-              value={`${requiredCollateral} ETH`}
-              highlight
-            />
+            <PreviewRow label="ETH thế chấp" value={`${requiredCollateral} ETH`} highlight />
           </View>
-          
           <View style={styles.previewWarning}>
             <Text style={styles.previewWarningText}>
               ⚠️ ETH sẽ bị khóa làm tài sản thế chấp cho đến khi bạn trả nợ
             </Text>
           </View>
-          
           <View style={styles.previewButtons}>
             <TouchableOpacity
               style={styles.previewCancelButton}
@@ -295,7 +230,6 @@ const CreateLoanScreen: React.FC = () => {
               disabled={isLoading}>
               <Text style={styles.previewCancelText}>Hủy</Text>
             </TouchableOpacity>
-            
             <TouchableOpacity
               style={styles.previewConfirmButton}
               onPress={handleConfirm}
@@ -315,156 +249,147 @@ const CreateLoanScreen: React.FC = () => {
   // =====================
   // MAIN RENDER
   // =====================
-  
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled">
-        
-        {/* Header - Điểm tín dụng */}
-        <View style={styles.creditScoreCard}>
-          <Text style={styles.creditScoreLabel}>Điểm tín dụng của bạn</Text>
-          <Text style={styles.creditScoreValue}>{MOCK_CREDIT_SCORE}</Text>
-          <Text style={styles.creditScoreHint}>
-            Lãi suất gợi ý: {getSuggestedInterestRate(MOCK_CREDIT_SCORE).min}% - {getSuggestedInterestRate(MOCK_CREDIT_SCORE).max}%
-          </Text>
-        </View>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
+      
+      {/* Header với nút Back */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={handleGoBack}
+          activeOpacity={0.7}>
+          <Ionicons name="arrow-back" size={20} color="#1a1a2e" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Tạo yêu cầu vay</Text>
+        <View style={styles.headerRight} />
+      </View>
 
-        {/* Form */}
-        <View style={styles.formCard}>
-          {/* Số tiền vay */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>💰 Số tiền muốn vay (USDT)</Text>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
-                placeholder="Nhập số tiền"
-                placeholderTextColor="#999"
-                keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={handleAmountChange}
-              />
-              <Text style={styles.inputSuffix}>USDT</Text>
-            </View>
-            {errors.amount && (
-              <Text style={styles.errorText}>{errors.amount}</Text>
-            )}
-            <Text style={styles.inputHint}>
-              Tối thiểu {LOAN_CONFIG.MIN_AMOUNT} - Tối đa {LOAN_CONFIG.MAX_AMOUNT} USDT
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
+          
+          {/* Header - Điểm tín dụng */}
+          <View style={styles.creditScoreCard}>
+            <Text style={styles.creditScoreLabel}>Điểm tín dụng của bạn</Text>
+            <Text style={styles.creditScoreValue}>{MOCK_CREDIT_SCORE}</Text>
+            <Text style={styles.creditScoreHint}>
+              Lãi suất gợi ý: {getSuggestedInterestRate(MOCK_CREDIT_SCORE).min}% - {getSuggestedInterestRate(MOCK_CREDIT_SCORE).max}%
             </Text>
           </View>
 
-          {/* Thời hạn vay */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>⏱️ Thời hạn vay</Text>
-            <View style={styles.durationContainer}>
-              {LOAN_CONFIG.DURATION_OPTIONS.map(opt =>
-                renderDurationChip(opt.value, opt.label)
+          {/* Form */}
+          <View style={styles.formCard}>
+            {/* Số tiền vay */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>💰 Số tiền muốn vay (USDT)</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nhập số tiền"
+                  placeholderTextColor="#999"
+                  keyboardType="decimal-pad"
+                  value={amount}
+                  onChangeText={handleAmountChange}
+                />
+                <Text style={styles.inputSuffix}>USDT</Text>
+              </View>
+              {errors.amount && <Text style={styles.errorText}>{errors.amount}</Text>}
+              <Text style={styles.inputHint}>
+                Tối thiểu {LOAN_CONFIG.MIN_AMOUNT} - Tối đa {LOAN_CONFIG.MAX_AMOUNT} USDT
+              </Text>
+            </View>
+
+            {/* Thời hạn vay */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>⏱️ Thời hạn vay</Text>
+              <View style={styles.durationContainer}>
+                {LOAN_CONFIG.DURATION_OPTIONS.map(opt => renderDurationChip(opt.value, opt.label))}
+              </View>
+            </View>
+
+            {/* Lãi suất */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>📊 Lãi suất đề xuất (%/năm)</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nhập lãi suất"
+                  placeholderTextColor="#999"
+                  keyboardType="decimal-pad"
+                  value={interestRate}
+                  onChangeText={handleInterestRateChange}
+                />
+                <Text style={styles.inputSuffix}>%/năm</Text>
+              </View>
+              {errors.interestRate && <Text style={styles.errorText}>{errors.interestRate}</Text>}
+              <Text style={styles.inputHint}>Lãi suất cao hơn = cơ hội được vay nhanh hơn</Text>
+            </View>
+          </View>
+
+          {/* Tính toán */}
+          {amount && interestRate && (
+            <View style={styles.calculationCard}>
+              <Text style={styles.calculationTitle}>📊 Tính toán</Text>
+              <View style={styles.calculationRow}>
+                <Text style={styles.calculationLabel}>Tiền lãi ({duration} ngày)</Text>
+                <Text style={styles.calculationValue}>{formatCurrency(interestAmount)} USDT</Text>
+              </View>
+              <View style={styles.calculationRow}>
+                <Text style={styles.calculationLabel}>Tổng phải trả</Text>
+                <Text style={[styles.calculationValue, styles.highlightValue]}>
+                  {formatCurrency(totalRepayment)} USDT
+                </Text>
+              </View>
+              <View style={styles.calculationDivider} />
+              <View style={styles.calculationRow}>
+                <Text style={styles.calculationLabel}>ETH cần thế chấp (150%)</Text>
+                <Text style={[styles.calculationValue, styles.ethValue]}>{requiredCollateral} ETH</Text>
+              </View>
+              <View style={styles.calculationRow}>
+                <Text style={styles.calculationLabel}>Số dư ETH của bạn</Text>
+                <Text
+                  style={[
+                    styles.calculationValue,
+                    parseFloat(balances.eth) < parseFloat(requiredCollateral) && styles.insufficientBalance,
+                  ]}>
+                  {parseFloat(balances.eth).toFixed(6)} ETH
+                </Text>
+              </View>
+              {errors.collateral && (
+                <View style={styles.collateralError}>
+                  <Text style={styles.collateralErrorText}>{errors.collateral}</Text>
+                </View>
               )}
             </View>
-          </View>
+          )}
 
-          {/* Lãi suất */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>📊 Lãi suất đề xuất (%/năm)</Text>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
-                placeholder="Nhập lãi suất"
-                placeholderTextColor="#999"
-                keyboardType="decimal-pad"
-                value={interestRate}
-                onChangeText={handleInterestRateChange}
-              />
-              <Text style={styles.inputSuffix}>%/năm</Text>
-            </View>
-            {errors.interestRate && (
-              <Text style={styles.errorText}>{errors.interestRate}</Text>
-            )}
-            <Text style={styles.inputHint}>
-              Lãi suất cao hơn = cơ hội được vay nhanh hơn
-            </Text>
-          </View>
-        </View>
+          {/* Nút tạo yêu cầu */}
+          <TouchableOpacity
+            style={[styles.submitButton, (!amount || !interestRate) && styles.submitButtonDisabled]}
+            onPress={handlePreview}
+            disabled={!amount || !interestRate}
+            activeOpacity={0.8}>
+            <Text style={styles.submitButtonText}>Xem trước & Tạo yêu cầu</Text>
+          </TouchableOpacity>
 
-        {/* Tính toán */}
-        {amount && interestRate && (
-          <View style={styles.calculationCard}>
-            <Text style={styles.calculationTitle}>📊 Tính toán</Text>
-            
-            <View style={styles.calculationRow}>
-              <Text style={styles.calculationLabel}>Tiền lãi ({duration} ngày)</Text>
-              <Text style={styles.calculationValue}>
-                {formatCurrency(interestAmount)} USDT
-              </Text>
-            </View>
-            
-            <View style={styles.calculationRow}>
-              <Text style={styles.calculationLabel}>Tổng phải trả</Text>
-              <Text style={[styles.calculationValue, styles.highlightValue]}>
-                {formatCurrency(totalRepayment)} USDT
-              </Text>
-            </View>
-            
-            <View style={styles.calculationDivider} />
-            
-            <View style={styles.calculationRow}>
-              <Text style={styles.calculationLabel}>
-                ETH cần thế chấp (150%)
-              </Text>
-              <Text style={[styles.calculationValue, styles.ethValue]}>
-                {requiredCollateral} ETH
-              </Text>
-            </View>
-            
-            <View style={styles.calculationRow}>
-              <Text style={styles.calculationLabel}>Số dư ETH của bạn</Text>
-              <Text style={[
-                styles.calculationValue,
-                parseFloat(balances.eth) < parseFloat(requiredCollateral) && styles.insufficientBalance
-              ]}>
-                {parseFloat(balances.eth).toFixed(6)} ETH
-              </Text>
-            </View>
-            
-            {errors.collateral && (
-              <View style={styles.collateralError}>
-                <Text style={styles.collateralErrorText}>{errors.collateral}</Text>
-              </View>
-            )}
-          </View>
-        )}
+          <View style={styles.bottomPadding} />
+        </ScrollView>
 
-        {/* Nút tạo yêu cầu */}
-        <TouchableOpacity
-          style={[
-            styles.submitButton,
-            (!amount || !interestRate) && styles.submitButtonDisabled,
-          ]}
-          onPress={handlePreview}
-          disabled={!amount || !interestRate}
-          activeOpacity={0.8}>
-          <Text style={styles.submitButtonText}>Xem trước & Tạo yêu cầu</Text>
-        </TouchableOpacity>
-
-        {/* Bottom padding */}
-        <View style={styles.bottomPadding} />
-      </ScrollView>
-
-      {/* Preview Modal */}
-      {renderPreviewModal()}
-    </KeyboardAvoidingView>
+        {renderPreviewModal()}
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 // =====================
 // HELPER COMPONENT
 // =====================
-
 interface PreviewRowProps {
   label: string;
   value: string;
@@ -474,17 +399,57 @@ interface PreviewRowProps {
 const PreviewRow: React.FC<PreviewRowProps> = ({ label, value, highlight }) => (
   <View style={styles.previewRow}>
     <Text style={styles.previewLabel}>{label}</Text>
-    <Text style={[styles.previewValue, highlight && styles.previewValueHighlight]}>
-      {value}
-    </Text>
+    <Text style={[styles.previewValue, highlight && styles.previewValueHighlight]}>{value}</Text>
   </View>
 );
 
 // =====================
 // STYLES
 // =====================
-
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  
+  // Header styles
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#f8f9fa',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  backButtonText: {
+    fontSize: 24,
+    color: '#1a1a2e',
+    fontWeight: '600',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1a1a2e',
+  },
+  headerRight: {
+    width: 40, // Để cân bằng với nút back
+  },
+
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
@@ -494,6 +459,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
+    paddingTop: 8,
   },
 
   // Credit Score Card

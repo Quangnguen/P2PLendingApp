@@ -1,6 +1,7 @@
 export { default as authReducer } from './authSlice';
 export { default as openBankingReducer } from './openBankingSlice';
 export { default as toastReducer } from './toastSlice';
+export { default as loanReducer } from './loanSlice';
 
 // Auth exports
 export {
@@ -17,14 +18,17 @@ export {
 
 // OpenBanking exports
 export {
-  createLinkToken,
-  exchangeToken,
+  loadBanks,
+  initiateLinkBank,
+  verifyOtpLink,
   loadConnections,
-  loadTransactions,
-  loadBalances,
-  disconnectBank,
+  hydrateConnectionsFromCache,
+  generateQRCode,
+  loadCreditScore,
   clearError as clearOpenBankingError,
+  clearQRData,
   resetOpenBanking,
+  resetLinkState,
 } from './openBankingSlice';
 
 // Toast exports
@@ -34,3 +38,11 @@ export {
   clearToasts,
   selectToasts,
 } from './toastSlice';
+
+export {
+  fetchMyLoans,
+  fetchPendingRequests,
+  fetchMyInvestments,
+  clearError as clearLoanError,
+  resetLoan,
+} from './loanSlice'; 

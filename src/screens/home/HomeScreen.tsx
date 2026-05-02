@@ -14,7 +14,8 @@ import { Card } from '@/components/common';
 import { useAppDispatch, useAuth, useOpenBanking, loadConnections } from '@/store';
 import { useTheme } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, formatDate } from '@/utils/formatters';
+import { loanApi } from '@/api/loan.api';
 
 type HomeScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -27,9 +28,57 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const { connections, totalBalance } = useOpenBanking();
   const [refreshing, setRefreshing] = React.useState(false);
 
+  const [featuredLoans, setFeaturedLoans] = React.useState<any[]>([]);
+  const [recentTransactions, setRecentTransactions] = React.useState<any[]>([]);
+
+  // Helper: Safely convert numeric values from API
+  const toNum = (val: any): number => {
+    if (val == null) return 0;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return parseFloat(val) || 0;
+    if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+    return parseFloat(String(val)) || 0;
+  };
+
+  const fetchData = React.useCallback(async () => {
+    try {
+      // 1. Fetch Featured Loans (others' loans)
+      const pendingRes = await loanApi.getPendingRequests();
+      const pendingData = pendingRes?.data || pendingRes || [];
+      if (Array.isArray(pendingData)) {
+        const othersLoans = pendingData.filter((loan: any) => {
+          if (!loan) return false;
+          const borrowerId = loan.borrowerId?._id || loan.borrowerId;
+          return borrowerId !== user?._id;
+        });
+        setFeaturedLoans(othersLoans.slice(0, 2));
+      }
+
+      // 2. Fetch Recent Transactions (real repayments/activities)
+      try {
+        const txRes = await loanApi.getMyTransactions();
+        const txData = txRes?.data || txRes || [];
+        if (Array.isArray(txData)) {
+          setRecentTransactions(txData.slice(0, 3));
+        }
+      } catch (txErr) {
+        console.log('Error fetching transactions:', txErr);
+      }
+    } catch (error) {
+      console.log('Error fetching home data:', error);
+    }
+  }, [user?._id]);
+
+  // Tự động load connections và dữ liệu khi vào HomeScreen
+  useEffect(() => {
+    dispatch(loadConnections());
+    fetchData();
+  }, [dispatch, fetchData]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await dispatch(loadConnections());
+    await fetchData();
     setRefreshing(false);
   };
 
@@ -43,37 +92,20 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     {
       icon: '💸',
       title: 'Vay tiền',
-      subtitle: 'Duyệt các khoản vay',
-      onPress: () => navigation.navigate('BrowseLoans'),
+      subtitle: 'Tạo yêu cầu vay',
+      onPress: () => navigation.navigate('CreateLoan'),
     },
     {
       icon: '📊',
       title: 'Đầu tư',
       subtitle: 'Cho vay P2P',
-      onPress: () => navigation.navigate('Loans'),
+      onPress: () => navigation.navigate('BrowseLoans'),
     },
     {
       icon: '📋',
       title: 'Lịch sử',
       subtitle: 'Giao dịch của bạn',
-      onPress: () => navigation.navigate('Wallet'),
-    },
-  ];
-
-  const featuredLoans = [
-    {
-      id: '1',
-      title: 'Khoản vay kinh doanh',
-      amount: 50000000,
-      interestRate: 12,
-      term: '12 tháng',
-    },
-    {
-      id: '2',
-      title: 'Khoản vay tiêu dùng',
-      amount: 20000000,
-      interestRate: 15,
-      term: '6 tháng',
+      onPress: () => navigation.navigate('LoansTab' as any),
     },
   ];
 
@@ -110,12 +142,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         >
           <Text style={styles.balanceLabel}>Tổng số dư</Text>
           <Text style={[styles.balanceAmount, { color: colors.textWhite }]}>
-            {formatCurrency(totalBalance || 0)}
+            {formatCurrency(toNum(totalBalance))}
           </Text>
           <View style={styles.balanceRow}>
             <View style={styles.balanceItem}>
               <Text style={styles.balanceItemLabel}>Tài khoản liên kết</Text>
-              <Text style={[styles.balanceItemValue, { color: colors.textWhite }]}>{connections.length}</Text>
+              <Text style={[styles.balanceItemValue, { color: colors.textWhite }]}>{connections?.length || 0}</Text>
             </View>
             <View style={styles.balanceDivider} />
             <View style={styles.balanceItem}>
@@ -126,8 +158,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         </LinearGradient>
 
         {/* Link Bank CTA */}
-        {connections.length === 0 && (
-          <Card style={{...styles.linkBankCard, backgroundColor: colors.accentBlue + '15', borderColor: colors.accentBlue}}>
+        {(!connections || connections.length === 0) && (
+          <Card style={{ ...styles.linkBankCard, backgroundColor: colors.accentBlue + '15', borderColor: colors.accentBlue }}>
             <View style={styles.linkBankContent}>
               <View style={[styles.linkBankIcon, { backgroundColor: colors.accentBlue + '30' }]}>
                 <Text style={styles.linkBankIconText}>🏦</Text>
@@ -176,48 +208,109 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               <Text style={[styles.seeAllText, { color: colors.accentBlue }]}>Xem tất cả</Text>
             </TouchableOpacity>
           </View>
-          {featuredLoans.map((loan) => (
-            <Card
-              key={loan.id}
-              style={styles.loanCard}
-              onPress={() => navigation.navigate('LoanDetail', { loanId: loan.id })}
-            >
-              <View style={styles.loanHeader}>
-                <Text style={[styles.loanTitle, { color: colors.textWhite }]}>{loan.title}</Text>
-                <View style={[styles.interestBadge, { backgroundColor: colors.greenSuccess + '20' }]}>
-                  <Text style={[styles.interestText, { color: colors.greenSuccess }]}>{loan.interestRate}%/năm</Text>
-                </View>
-              </View>
-              <View style={styles.loanDetails}>
-                <View style={styles.loanDetail}>
-                  <Text style={[styles.loanDetailLabel, { color: colors.textGray }]}>Số tiền</Text>
-                  <Text style={[styles.loanDetailValue, { color: colors.textWhite }]}>
-                    {formatCurrency(loan.amount)}
-                  </Text>
-                </View>
-                <View style={styles.loanDetail}>
-                  <Text style={[styles.loanDetailLabel, { color: colors.textGray }]}>Kỳ hạn</Text>
-                  <Text style={[styles.loanDetailValue, { color: colors.textWhite }]}>{loan.term}</Text>
-                </View>
+          {!featuredLoans || featuredLoans.length === 0 ? (
+            <Card style={styles.loanCard}>
+              <View style={styles.emptyTransactions}>
+                <Text style={[styles.emptyText, { color: colors.textGray }]}>Không có khoản vay nào mới</Text>
               </View>
             </Card>
-          ))}
+          ) : (
+            featuredLoans.map((loan) => (
+              <Card
+                key={loan._id || loan.id}
+                style={styles.loanCard}
+                onPress={() => navigation.navigate('LoanDetail', { loanId: loan._id || loan.id })}
+              >
+                <View style={styles.loanHeader}>
+                  <Text style={[styles.loanTitle, { color: colors.textWhite }]}>
+                    {loan.purpose || `Vay ${toNum(loan.loanAmount)} USDT`}
+                  </Text>
+                  <View style={[styles.interestBadge, { backgroundColor: colors.greenSuccess + '20' }]}>
+                    <Text style={[styles.interestText, { color: colors.greenSuccess }]}>{toNum(loan.interestRate)}%/năm</Text>
+                  </View>
+                </View>
+                <View style={styles.loanDetails}>
+                  <View style={styles.loanDetail}>
+                    <Text style={[styles.loanDetailLabel, { color: colors.textGray }]}>Số tiền</Text>
+                    <Text style={[styles.loanDetailValue, { color: colors.textWhite }]}>
+                      {formatCurrency(toNum(loan.loanAmount))}
+                    </Text>
+                  </View>
+                  <View style={styles.loanDetail}>
+                    <Text style={[styles.loanDetailLabel, { color: colors.textGray }]}>Kỳ hạn</Text>
+                    <Text style={[styles.loanDetailValue, { color: colors.textWhite }]}>{toNum(loan.durationDays)} ngày</Text>
+                  </View>
+                </View>
+              </Card>
+            ))
+          )}
         </View>
 
         {/* Recent Transactions */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.textWhite }]}>Giao dịch gần đây</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Wallet')}>
+            <TouchableOpacity onPress={() => navigation.navigate('WalletTab' as any)}>
               <Text style={[styles.seeAllText, { color: colors.accentBlue }]}>Xem tất cả</Text>
             </TouchableOpacity>
           </View>
-          <Card style={styles.transactionCard}>
-            <View style={styles.emptyTransactions}>
-              <Text style={styles.emptyIcon}>📝</Text>
-              <Text style={[styles.emptyText, { color: colors.textGray }]}>Chưa có giao dịch nào</Text>
-            </View>
-          </Card>
+          
+          {!recentTransactions || recentTransactions.length === 0 ? (
+            <Card style={styles.transactionCard}>
+              <View style={styles.emptyTransactions}>
+                <Text style={styles.emptyIcon}>📝</Text>
+                <Text style={[styles.emptyText, { color: colors.textGray }]}>Chưa có giao dịch nào</Text>
+              </View>
+            </Card>
+          ) : (
+            recentTransactions.map((tx) => {
+              const isPayment = tx.type === 'PAYMENT';
+              return (
+                <TouchableOpacity 
+                  key={tx._id} 
+                  onPress={() => tx.loanInfo?._id && navigation.navigate('LoanDetail', { loanId: tx.loanInfo._id })}
+                >
+                  <Card style={[styles.loanCard, { marginBottom: 8 }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={{ 
+                          width: 40, 
+                          height: 40, 
+                          borderRadius: 20, 
+                          backgroundColor: isPayment ? colors.redError + '20' : colors.greenSuccess + '20',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          marginRight: 12
+                        }}>
+                          <Text style={{ fontSize: 18 }}>{isPayment ? '💸' : '💰'}</Text>
+                        </View>
+                        <View>
+                          <Text style={{ color: colors.textWhite, fontWeight: '600', fontSize: 15 }}>
+                            {isPayment ? 'Thanh toán trả nợ' : 'Nhận tiền thanh toán'}
+                          </Text>
+                          <Text style={{ color: colors.textGray, fontSize: 12 }}>
+                            {formatDate(new Date(tx.date))}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={{ 
+                          color: isPayment ? colors.redError : colors.greenSuccess, 
+                          fontWeight: 'bold',
+                          fontSize: 16
+                        }}>
+                          {isPayment ? '-' : '+'}{formatCurrency(toNum(tx.amount))}
+                        </Text>
+                        <Text style={{ color: colors.textGray, fontSize: 10 }}>
+                          {tx.status === 'COMPLETED' ? 'Thành công' : 'Đang xử lý'}
+                        </Text>
+                      </View>
+                    </View>
+                  </Card>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>

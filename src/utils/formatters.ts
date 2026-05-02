@@ -18,12 +18,18 @@ export const formatCurrency = (amount: number, currency: string = 'VND'): string
  * Format date to Vietnamese format
  */
 export const formatDate = (dateInput: string | Date): string => {
-  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-  return date.toLocaleDateString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  if (!dateInput) return 'N/A';
+  try {
+    const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+    if (isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  } catch (e) {
+    return 'N/A';
+  }
 };
 
 /**

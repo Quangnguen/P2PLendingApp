@@ -12,55 +12,95 @@ import { useTheme } from '../../providers';
 import { RootStackParamList } from '../../navigation/types';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
+import { RouteProp } from '@react-navigation/native';
+import { launchCamera, Asset } from 'react-native-image-picker';
+import { kycApi } from '../../api/kyc.api';
+import { Alert, ActivityIndicator, Image } from 'react-native';
+
 type KYCFaceScanScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'KYCFaceScan'>;
+  route: RouteProp<RootStackParamList, 'KYCFaceScan'>;
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CIRCLE_SIZE = SCREEN_WIDTH * 0.7;
 
-const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation }) => {
-  const [progress, setProgress] = useState(0);
-  const [isScanning, setIsScanning] = useState(false);
-  const [instruction, setInstruction] = useState('Đưa khuôn mặt vào khung hình');
-  const [faceDetected, setFaceDetected] = useState(false);
+const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
+  const { frontImageUri } = route.params;
 
-  useEffect(() => {
-    if (isScanning && progress < 100) {
-      const timer = setInterval(() => {
-        setProgress(prev => {
-          const next = prev + 2;
-          
-          if (next === 20) {
-            setInstruction('Nhìn thẳng vào camera');
-          } else if (next === 40) {
-            setInstruction('Từ từ quay đầu sang trái');
-          } else if (next === 60) {
-            setInstruction('Từ từ quay đầu sang phải');
-          } else if (next === 80) {
-            setInstruction('Ngửa đầu lên một chút');
-          } else if (next >= 98) {
-            setInstruction('Hoàn thành!');
-            clearInterval(timer);
-            
-            setTimeout(() => {
-              navigation.navigate('KYCSuccess');
-            }, 500);
-          }
-          
-          return Math.min(next, 100);
-        });
-      }, 100);
-      
-      return () => clearInterval(timer);
+  const [capturedSelfie, setCapturedSelfie] = useState<Asset | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [instruction, setInstruction] = useState('Đưa khuôn mặt vào khung hình');
+  const [progress, setProgress] = useState(0);
+
+  // Chụp ảnh selfie
+  const handleCaptureSelfie = async () => {
+    try {
+      const result = await launchCamera({
+        mediaType: 'photo',
+        quality: 0.8,
+        maxWidth: 1000,
+        maxHeight: 1000,
+        cameraType: 'front',
+        saveToPhotos: false,
+      });
+
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        Alert.alert('Lỗi', result.errorMessage || 'Không thể mở camera');
+        return;
+      }
+
+      const asset = result.assets?.[0];
+      if (asset) {
+        setCapturedSelfie(asset);
+        await performFaceMatch(asset.uri!);
+      }
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể truy cập camera');
     }
-  }, [isScanning, progress, navigation]);
+  };
 
-  const handleStartScan = () => {
-    setFaceDetected(true);
-    setIsScanning(true);
-    setInstruction('Đang quét khuôn mặt...');
+  // So khớp khuôn mặt qua Backend (FPT.AI)
+  const performFaceMatch = async (selfieUri: string) => {
+    setIsProcessing(true);
+    setInstruction('Đang so khớp khuôn mặt...');
+    setProgress(30);
+
+    try {
+      // Step 2: Match faces
+      const response = await kycApi.matchFaces(frontImageUri, selfieUri);
+      
+      if (response.success) {
+        setProgress(70);
+        setInstruction('Đang hoàn tất KYC...');
+        
+        // Step 3: Complete KYC
+        const completeRes = await kycApi.completeKYC();
+        
+        if (completeRes.success) {
+          setProgress(100);
+          Alert.alert('Thành công', 'Xác thực khuôn mặt thành công!', [
+            { text: 'Tiếp tục', onPress: () => navigation.navigate('KYCSuccess') }
+          ]);
+        }
+      } else {
+        Alert.alert(
+          'Xác thực thất bại',
+          `Khuôn mặt không khớp (độ giống: ${response.data.similarity}%). Vui lòng chụp lại.`
+        );
+        setCapturedSelfie(null);
+        setProgress(0);
+        setInstruction('Thử lại: Đưa khuôn mặt vào khung hình');
+      }
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.response?.data?.message || 'Có lỗi xảy ra khi xác thực');
+      setCapturedSelfie(null);
+      setProgress(0);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDemoSkip = () => {
@@ -68,7 +108,7 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation }) => 
   };
 
   const getProgressColor = () => {
-    if (!faceDetected) return colors.textGray;
+    if (progress === 0) return colors.textGray;
     return progress >= 100 ? colors.greenSuccess : colors.accentBlue;
   };
 
@@ -90,7 +130,7 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation }) => 
         {/* Instruction Text */}
         <View style={styles.instructionContainer}>
           <Text style={[styles.instructionTitle, { color: colors.textWhite }]}>{instruction}</Text>
-          {!isScanning && (
+          {!isProcessing && (
             <Text style={[styles.instructionSubtitle, { color: colors.textGray }]}>
               Đảm bảo khuôn mặt được chiếu sáng đều và không có vật cản
             </Text>
@@ -100,11 +140,14 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation }) => 
         {/* Camera Preview with Face Frame */}
         <View style={styles.cameraContainer}>
           <View style={[styles.cameraPlaceholder, { backgroundColor: colors.darkSurface }]}>
-            <Text style={styles.cameraPlaceholderIcon}>👤</Text>
-            <Text style={[styles.cameraPlaceholderText, { color: colors.textWhite }]}>Camera Preview</Text>
-            <Text style={[styles.cameraPlaceholderNote, { color: colors.textGray }]}>
-              (Cần tích hợp react-native-camera)
-            </Text>
+            {capturedSelfie ? (
+              <Image source={{ uri: capturedSelfie.uri }} style={styles.capturedSelfie} />
+            ) : (
+              <>
+                <Text style={styles.cameraPlaceholderIcon}>👤</Text>
+                <Text style={[styles.cameraPlaceholderText, { color: colors.textWhite }]}>Camera Preview</Text>
+              </>
+            )}
           </View>
 
           {/* Face Frame Overlay */}
@@ -116,16 +159,23 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation }) => 
               ]}
             >
               <View style={[styles.faceOval, { borderColor: colors.accentBlue + '60' }]}>
-                {faceDetected && (
+                {progress > 0 && (
                   <Text style={[styles.progressText, { color: colors.accentBlue }]}>{progress}%</Text>
                 )}
               </View>
             </View>
           </View>
+
+          {/* Processing overlay */}
+          {isProcessing && (
+            <View style={styles.processingOverlay}>
+              <ActivityIndicator size="large" color={colors.accentBlue} />
+            </View>
+          )}
         </View>
 
         {/* Progress Bar */}
-        {isScanning && (
+        {progress > 0 && (
           <View style={styles.progressBarContainer}>
             <View style={[styles.progressBarBackground, { backgroundColor: colors.darkSurface }]}>
               <View
@@ -137,7 +187,7 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation }) => 
         )}
 
         {/* Instructions List */}
-        {!isScanning && (
+        {progress === 0 && (
           <View style={[styles.tipsContainer, { backgroundColor: colors.darkSurface }]}>
             <Text style={[styles.tipsTitle, { color: colors.textWhite }]}>Lưu ý:</Text>
             <View style={styles.tipItem}>
@@ -158,11 +208,11 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation }) => 
 
       {/* Bottom Actions */}
       <View style={styles.bottomContainer}>
-        {!isScanning ? (
+        {!isProcessing ? (
           <>
             <TouchableOpacity
               style={[styles.scanButton, { backgroundColor: colors.accentBlue }]}
-              onPress={handleStartScan}
+              onPress={handleCaptureSelfie}
             >
               <Text style={[styles.scanButtonText, { color: colors.textWhite }]}>Bắt đầu quét</Text>
             </TouchableOpacity>
@@ -255,6 +305,18 @@ const styles = StyleSheet.create({
   },
   cameraPlaceholderNote: {
     fontSize: 11,
+  },
+  capturedSelfie: {
+    width: CIRCLE_SIZE,
+    height: CIRCLE_SIZE,
+    borderRadius: CIRCLE_SIZE / 2,
+  },
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
   },
   faceFrameContainer: {
     position: 'absolute',

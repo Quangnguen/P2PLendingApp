@@ -69,13 +69,13 @@ export enum LoanStatus {
 }
 
 export interface CreateLoanRequest {
-  amount: number;
-  currency: string;
-  term: number;
-  purpose: string;
-  interestRate?: number;
-  duration: LoanDuration;
-  collateralAmount: string;
+  loanAmount: number;
+  interestRate: number;
+  durationDays: number;
+  purpose?: string;
+  purposeDescription?: string;
+  collateralType?: string;
+  collateralAmount?: number;
 }
 
 export interface LoanPayment {

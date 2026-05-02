@@ -3,6 +3,7 @@ import {
   authReducer,
   openBankingReducer,
   toastReducer,
+  loanReducer,
 } from './slices';
 
 // Root reducer (không cần persist vì theme dùng Zustand với persist riêng)
@@ -10,6 +11,7 @@ const rootReducer = combineReducers({
   auth: authReducer,
   openBanking: openBankingReducer,
   toast: toastReducer,
+  loan: loanReducer,
 });
 
 // Store

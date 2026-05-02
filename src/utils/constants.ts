@@ -1,5 +1,6 @@
 export const API_BASE_URL = 'http://10.0.2.2:9000/api/v1'; // Android Emulator
 // export const API_BASE_URL = 'http://localhost:9000/api/v1'; // iOS Simulator
+// export const API_BASE_URL = 'http://192.168.1.22:9000/api/v1'; // Physical Device via WiFi
 
 export const STORAGE_KEYS = {
   ACCESS_TOKEN: 'accessToken',
@@ -15,22 +16,22 @@ export const APP_NAME = 'P2P Lending';
 export const LOAN_CONFIG = {
   /** Số tiền vay tối thiểu (USDT) */
   MIN_AMOUNT: '100',
-  
+
   /** Số tiền vay tối đa (USDT) */
   MAX_AMOUNT: '10000',
-  
+
   /** Lãi suất tối thiểu (% năm) */
   MIN_INTEREST_RATE: 5,
-  
+
   /** Lãi suất tối đa (% năm) */
   MAX_INTEREST_RATE: 50,
-  
+
   /** Tỷ lệ thế chấp tối thiểu (%) */
   MIN_COLLATERAL_RATIO: 150,
-  
+
   /** Tỷ lệ thanh lý tài sản thế chấp (%) */
   LIQUIDATION_THRESHOLD: 120,
-  
+
   /** Các tùy chọn thời hạn vay */
   DURATION_OPTIONS: [
     { label: '7 ngày', value: 7 },
@@ -39,7 +40,7 @@ export const LOAN_CONFIG = {
     { label: '60 ngày', value: 60 },
     { label: '90 ngày', value: 90 },
   ],
-  
+
   /** Lãi suất gợi ý theo điểm tín dụng */
   SUGGESTED_RATES: {
     EXCELLENT: { min: 5, max: 10, label: 'Xuất sắc (700+)' },

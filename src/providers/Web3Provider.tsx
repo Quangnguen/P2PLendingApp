@@ -35,13 +35,13 @@ import {
 interface ConnectionState {
   // Địa chỉ ví đã kết nối (null nếu chưa kết nối)
   address: string | null;
-  
+
   // Chain ID của network đang kết nối
   chainId: number | null;
-  
+
   // Đã kết nối hay chưa
   isConnected: boolean;
-  
+
   // Đang trong quá trình kết nối
   isConnecting: boolean;
 }
@@ -52,10 +52,10 @@ interface ConnectionState {
 interface BalanceInfo {
   // Số dư ETH (native token)
   eth: string;
-  
+
   // Số dư USDT
   usdt: string;
-  
+
   // Đang loading
   isLoading: boolean;
 }
@@ -68,17 +68,17 @@ interface Web3ContextType {
   connection: ConnectionState;
   balances: BalanceInfo;
   error: string | null;
-  
+
   // Actions
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   refreshBalances: () => Promise<void>;
-  
+
   // Utils
   getProvider: () => ethers.providers.JsonRpcProvider | null;
   formatAddress: (address: string | null) => string;
   formatBalance: (balance: string, decimals?: number) => string;
-  
+
   // Contract interactions (sẽ implement ngày 13)
   sendTransaction: (tx: ethers.providers.TransactionRequest) => Promise<string | null>;
   signMessage: (message: string) => Promise<string | null>;
@@ -117,7 +117,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
   // =====================
   // STATE
   // =====================
-  
+
   /**
    * Trạng thái kết nối
    */
@@ -145,7 +145,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
   // =====================
   // PROVIDER
   // =====================
-  
+
   /**
    * Tạo ethers provider để đọc dữ liệu từ blockchain
    * 
@@ -154,9 +154,21 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
    */
   const getProvider = useCallback(() => {
     try {
-      // JsonRpcProvider kết nối đến node Ethereum qua HTTP
-      // CURRENT_CHAIN.rpcUrl = URL của Infura
-      return new ethers.providers.JsonRpcProvider(CURRENT_CHAIN.rpcUrl);
+      /**
+       * SỬ DỤNG StaticJsonRpcProvider THAY CHO JsonRpcProvider
+       * 
+       * Tại sao? 
+       * Trong môi trường React Native + Ganache, JsonRpcProvider thường xuyên gọi getNetwork()
+       * gây ra lỗi "could not detect network".
+       * StaticJsonRpcProvider bỏ qua bước detect network liên tục này nếu chúng ta cung cấp chainId.
+       */
+      return new ethers.providers.StaticJsonRpcProvider(
+        CURRENT_CHAIN.rpcUrl,
+        {
+          chainId: CURRENT_CHAIN.id,
+          name: CURRENT_CHAIN.name,
+        }
+      );
     } catch (err) {
       console.error('Error creating provider:', err);
       return null;
@@ -166,7 +178,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
   // =====================
   // FETCH BALANCES
   // =====================
-  
+
   /**
    * Lấy số dư ETH và USDT của một địa chỉ
    * 
@@ -176,7 +188,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
   const fetchBalances = useCallback(async (address: string): Promise<{ eth: string; usdt: string }> => {
     // Lấy provider
     const provider = getProvider();
-    
+
     // Validate
     if (!provider || !address) {
       return { eth: '0', usdt: '0' };
@@ -191,7 +203,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
        * Ví dụ: 1500000000000000000 wei = 1.5 ETH
        */
       const ethBalanceWei = await provider.getBalance(address);
-      
+
       /**
        * formatEther chuyển từ wei sang ETH
        * 1500000000000000000 → "1.5"
@@ -200,7 +212,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
 
       // ----- LẤY SỐ DƯ USDT (Token ERC20) -----
       let usdtFormatted = '0';
-      
+
       try {
         /**
          * Tạo Contract instance để tương tác với USDT contract
@@ -221,14 +233,14 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
          * Trả về số dư token của address
          */
         const usdtBalanceRaw = await usdtContract.balanceOf(address);
-        
+
         /**
          * Lấy số decimals của token
          * USDT thường có 6 decimals (không phải 18 như ETH)
          * 1 USDT = 1000000 (6 số 0)
          */
         const decimals = await usdtContract.decimals();
-        
+
         /**
          * formatUnits chuyển từ đơn vị nhỏ nhất sang đơn vị đọc được
          * formatUnits(1000000, 6) → "1.0"
@@ -239,8 +251,22 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
       }
 
       return { eth: ethFormatted, usdt: usdtFormatted };
-    } catch (err) {
-      console.error('Error fetching balances:', err);
+    } catch (err: any) {
+      /**
+       * Lỗi NETWORK_ERROR thường xảy ra khi:
+       * 1. Ganache chưa chạy
+       * 2. Port Ganache không khớp (7545 vs 8545)
+       * 3. Địa chỉ 10.0.2.2 không truy cập được từ emulator
+       */
+      if (err.code === 'NETWORK_ERROR' || err.code === 'SERVER_ERROR') {
+        console.warn('📡 Blockchain connection issue:', err.code, '- Please check:');
+        console.warn('  1. Ganache is running on port 7545');
+        console.warn('  2. Run: adb reverse tcp:7545 tcp:7545');
+        console.warn('  RPC URL:', CURRENT_CHAIN.rpcUrl);
+        setError(`Không thể kết nối blockchain. Vui lòng kiểm tra Ganache và adb reverse.`);
+      } else {
+        console.error('Error fetching balances:', err);
+      }
       return { eth: '0', usdt: '0' };
     }
   }, [getProvider]);
@@ -248,7 +274,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
   // =====================
   // REFRESH BALANCES
   // =====================
-  
+
   /**
    * Làm mới số dư
    * Gọi khi user pull-to-refresh hoặc sau giao dịch
@@ -263,7 +289,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
     try {
       // Fetch số dư mới
       const newBalances = await fetchBalances(connection.address);
-      
+
       // Cập nhật state
       setBalances({
         eth: newBalances.eth,
@@ -271,7 +297,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
         isLoading: false,
       });
     } catch (err) {
-        console.error('Error refreshing balances:', err);
+      console.error('Error refreshing balances:', err);
       setBalances(prev => ({ ...prev, isLoading: false }));
     }
   }, [connection.address, fetchBalances]);
@@ -279,49 +305,73 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
   // =====================
   // LOAD SAVED SESSION
   // =====================
-  
+
   /**
    * Load session đã lưu khi app khởi động
-   * 
-   * Mục đích: User không cần kết nối lại mỗi lần mở app
+   * Nếu không có session → tự động kết nối Ganache Account #0 cho demo
    */
   useEffect(() => {
+    const GANACHE_DEMO_ADDRESS = '0x0BA0aF86A2D23e59D002c7084F77F4E4049F5D6C';
+
     const loadSavedSession = async () => {
       try {
         // Đọc từ AsyncStorage
         const savedData = await AsyncStorage.getItem(STORAGE_KEY);
-        
+
+        let targetAddress: string;
+
         if (savedData) {
           // Parse JSON
-          const { address, chainId } = JSON.parse(savedData);
-          
+          const { address } = JSON.parse(savedData);
+
           // Validate và normalize address
-          let normalizedAddress: string;
           try {
-            // getAddress sẽ throw error nếu address không hợp lệ
-            normalizedAddress = ethers.utils.getAddress(address);
+            targetAddress = ethers.utils.getAddress(address);
+            
+            // Kiểm tra nếu address cũ không còn balance (Ganache restart)
+            // → chuyển sang demo address mới
+            if (targetAddress !== GANACHE_DEMO_ADDRESS) {
+              const checkBalance = await fetchBalances(targetAddress);
+              if (checkBalance.eth === '0' || parseFloat(checkBalance.eth) === 0) {
+                console.log('⚠️ Saved address has 0 balance, switching to demo address');
+                await AsyncStorage.removeItem(STORAGE_KEY);
+                targetAddress = GANACHE_DEMO_ADDRESS;
+              }
+            }
           } catch {
-            // Address không hợp lệ, xóa session cũ
+            // Address không hợp lệ, dùng demo address
             await AsyncStorage.removeItem(STORAGE_KEY);
-            return;
+            targetAddress = GANACHE_DEMO_ADDRESS;
           }
-          
-          // Cập nhật state
-          setConnection({
-            address: normalizedAddress,
-            chainId,
-            isConnected: true,
-            isConnecting: false,
-          });
-          
-          // Fetch số dư
-          const balanceData = await fetchBalances(normalizedAddress);
-          setBalances({
-            eth: balanceData.eth,
-            usdt: balanceData.usdt,
-            isLoading: false,
-          });
+        } else {
+          // Không có session → Auto-connect Ganache demo account
+          console.log('📱 Auto-connect Ganache demo wallet:', GANACHE_DEMO_ADDRESS);
+          targetAddress = GANACHE_DEMO_ADDRESS;
         }
+
+        // Cập nhật state
+        setConnection({
+          address: targetAddress,
+          chainId: CURRENT_CHAIN.id,
+          isConnected: true,
+          isConnecting: false,
+        });
+
+        // Fetch số dư
+        console.log('🔄 Fetching balances for:', targetAddress);
+        const balanceData = await fetchBalances(targetAddress);
+        console.log('💰 Balances:', balanceData);
+        setBalances({
+          eth: balanceData.eth,
+          usdt: balanceData.usdt,
+          isLoading: false,
+        });
+
+        // Lưu session để lần sau không cần auto-connect
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({
+          address: targetAddress,
+          chainId: CURRENT_CHAIN.id,
+        }));
       } catch (err) {
         console.error('Error loading saved session:', err);
       }
@@ -333,7 +383,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
   // =====================
   // CONNECT
   // =====================
-  
+
   /**
    * Kết nối ví
    * 
@@ -346,17 +396,9 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
     setError(null);
 
     try {
-      /**
-       * Phiên bản 1: Prompt nhập địa chỉ
-       * 
-       * Phiên bản 2 (sẽ làm): WalletConnect Modal
-       * - Hiển thị QR code
-       * - User quét bằng MetaMask
-       * - Tự động kết nối
-       */
-      
-      // Tạm thời dùng Alert.prompt (chỉ hoạt động trên iOS)
-      // Android sẽ dùng Modal riêng
+      // Ganache Account #0 (deterministic) - cho demo
+      const GANACHE_DEMO_ADDRESS = '0x0BA0aF86A2D23e59D002c7084F77F4E4049F5D6C';
+
       if (Platform.OS === 'ios') {
         Alert.prompt(
           'Kết nối ví',
@@ -376,32 +418,26 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
               },
             },
           ],
-          'plain-text'
+          'plain-text',
+          GANACHE_DEMO_ADDRESS
         );
       } else {
-        // Android: Hiển thị hướng dẫn mở MetaMask
+        // Android: Cho user chọn kết nối demo hoặc nhập địa chỉ
         Alert.alert(
-          '🦊 Kết nối MetaMask',
-          'Vui lòng:\n\n1. Mở MetaMask\n2. Copy địa chỉ ví\n3. Quay lại đây và paste',
+          '🔗 Kết nối ví',
+          `Kết nối với ví Ganache demo?\n\nĐịa chỉ: ${GANACHE_DEMO_ADDRESS.slice(0, 10)}...${GANACHE_DEMO_ADDRESS.slice(-6)}\n(1000 ETH + 100,000 USDT)`,
           [
             {
-              text: 'Mở MetaMask',
-              onPress: async () => {
-                const metamaskUrl = 'metamask://';
-                const canOpen = await Linking.canOpenURL(metamaskUrl);
-                if (canOpen) {
-                  await Linking.openURL(metamaskUrl);
-                } else {
-                  Alert.alert('Lỗi', 'MetaMask chưa được cài đặt');
-                }
+              text: 'Hủy',
+              style: 'cancel',
+              onPress: () => {
                 setConnection(prev => ({ ...prev, isConnecting: false }));
               },
             },
             {
-              text: 'Paste địa chỉ',
-              onPress: () => {
-                // Sẽ handle bằng clipboard
-                setConnection(prev => ({ ...prev, isConnecting: false }));
+              text: 'Kết nối Demo',
+              onPress: async () => {
+                await handleAddressInput(GANACHE_DEMO_ADDRESS);
               },
             },
           ]
@@ -426,10 +462,10 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
     try {
       // Validate và chuẩn hóa địa chỉ
       const normalizedAddress = ethers.utils.getAddress(inputAddress.trim());
-      
+
       // Lấy số dư
       const balanceData = await fetchBalances(normalizedAddress);
-      
+
       // Cập nhật state
       setConnection({
         address: normalizedAddress,
@@ -437,19 +473,19 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
         isConnected: true,
         isConnecting: false,
       });
-      
+
       setBalances({
         eth: balanceData.eth,
         usdt: balanceData.usdt,
         isLoading: false,
       });
-      
+
       // Lưu session
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({
         address: normalizedAddress,
         chainId: CURRENT_CHAIN.id,
       }));
-      
+
     } catch (err: any) {
       console.error('Error handling address input:', err);
       setError('Địa chỉ ví không hợp lệ');
@@ -460,7 +496,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
   // =====================
   // DISCONNECT
   // =====================
-  
+
   /**
    * Ngắt kết nối ví
    */
@@ -468,7 +504,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
     try {
       // Xóa session đã lưu
       await AsyncStorage.removeItem(STORAGE_KEY);
-      
+
       // Reset state
       setConnection({
         address: null,
@@ -476,13 +512,13 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
         isConnected: false,
         isConnecting: false,
       });
-      
+
       setBalances({
         eth: '0',
         usdt: '0',
         isLoading: false,
       });
-      
+
       setError(null);
     } catch (err) {
       console.error('Error disconnecting:', err);
@@ -492,44 +528,121 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
   // =====================
   // SEND TRANSACTION (Placeholder)
   // =====================
-  
+
   /**
    * Gửi giao dịch
    * 
-   * Sẽ implement đầy đủ ở Ngày 13
-   * Hiện tại chỉ là placeholder
+   * Phiên bản hiện tại: Simulate giao dịch cho demo
+   * Phiên bản production: Sẽ dùng WalletConnect để ký qua MetaMask
    */
-//   const sendTransaction = useCallback(async (
-//     tx: ethers.providers.TransactionRequest
-//   ): Promise<string | null> => {
-//     Alert.alert(
-//       '⚠️ Chưa hỗ trợ',
-//       'Tính năng ký giao dịch sẽ được thêm khi tích hợp WalletConnect đầy đủ'
-//     );
-//     return null;
-//   }, []);
+  const sendTransaction = useCallback(async (
+    tx: ethers.providers.TransactionRequest
+  ): Promise<string | null> => {
+    if (!connection.isConnected || !connection.address) {
+      Alert.alert('⚠️ Lỗi', 'Vui lòng kết nối ví trước khi giao dịch');
+      return null;
+    }
+
+    try {
+      // Validate transaction
+      if (!tx.to) {
+        Alert.alert('⚠️ Lỗi', 'Địa chỉ đích không hợp lệ');
+        return null;
+      }
+
+      // Log transaction details for debugging
+      console.log('\n=== SENDING TRANSACTION ===');
+      console.log('From:', connection.address);
+      console.log('To:', tx.to);
+      console.log('Value:', tx.value?.toString() || '0');
+      console.log('Data:', tx.data?.toString().slice(0, 50) + '...');
+
+      /**
+       * Phiên bản Demo: Simulate transaction
+       * 
+       * Trong production, sẽ gọi:
+       * const provider = new ethers.providers.Web3Provider(walletConnectProvider);
+       * const signer = provider.getSigner();
+       * const txResponse = await signer.sendTransaction(tx);
+       * return txResponse.hash;
+       */
+
+      // Simulate processing time
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Generate mock transaction hash
+      const mockTxHash = '0x' + Array.from({ length: 64 }, () =>
+        Math.floor(Math.random() * 16).toString(16)
+      ).join('');
+
+      console.log('Transaction sent! Hash:', mockTxHash);
+      console.log('=== TRANSACTION COMPLETE ===\n');
+
+      // Refresh balances after transaction
+      await refreshBalances();
+
+      return mockTxHash;
+    } catch (err: any) {
+      console.error('Transaction failed:', err);
+      Alert.alert('❌ Giao dịch thất bại', err.message || 'Vui lòng thử lại');
+      return null;
+    }
+  }, [connection, refreshBalances]);
 
   // =====================
   // SIGN MESSAGE (Placeholder)
   // =====================
-  
+
   /**
    * Ký message
    * 
-   * Sẽ implement đầy đủ ở Ngày 13
+   * Phiên bản hiện tại: Simulate signing cho demo
+   * Phiên bản production: Sẽ dùng WalletConnect để ký qua MetaMask
    */
-//   const signMessage = useCallback(async (message: string): Promise<string | null> => {
-//     Alert.alert(
-//       '⚠️ Chưa hỗ trợ',
-//       'Tính năng ký message sẽ được thêm khi tích hợp WalletConnect đầy đủ'
-//     );
-//     return null;
-//   }, []);
+  const signMessage = useCallback(async (message: string): Promise<string | null> => {
+    if (!connection.isConnected || !connection.address) {
+      Alert.alert('⚠️ Lỗi', 'Vui lòng kết nối ví trước khi ký');
+      return null;
+    }
+
+    try {
+      console.log('\n=== SIGNING MESSAGE ===');
+      console.log('Address:', connection.address);
+      console.log('Message:', message.slice(0, 100) + (message.length > 100 ? '...' : ''));
+
+      /**
+       * Phiên bản Demo: Simulate signing
+       * 
+       * Trong production, sẽ gọi:
+       * const provider = new ethers.providers.Web3Provider(walletConnectProvider);
+       * const signer = provider.getSigner();
+       * const signature = await signer.signMessage(message);
+       * return signature;
+       */
+
+      // Simulate processing time
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Generate mock signature
+      const mockSignature = '0x' + Array.from({ length: 130 }, () =>
+        Math.floor(Math.random() * 16).toString(16)
+      ).join('');
+
+      console.log('Message signed! Signature:', mockSignature.slice(0, 20) + '...');
+      console.log('=== SIGNING COMPLETE ===\n');
+
+      return mockSignature;
+    } catch (err: any) {
+      console.error('Signing failed:', err);
+      Alert.alert('❌ Ký thất bại', err.message || 'Vui lòng thử lại');
+      return null;
+    }
+  }, [connection]);
 
   // =====================
   // UTILITY FUNCTIONS
   // =====================
-  
+
   /**
    * Format địa chỉ thành dạng rút gọn
    * 
@@ -562,26 +675,26 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
   // =====================
   // CONTEXT VALUE
   // =====================
-  
+
   const value: Web3ContextType = {
     // State
     connection,
     balances,
     error,
-    
+
     // Actions
     connect,
     disconnect,
     refreshBalances,
-    
+
     // Utils
     getProvider,
     formatAddress,
     formatBalance,
-    
+
     // Contract interactions
-    // sendTransaction,
-    // signMessage,
+    sendTransaction,
+    signMessage,
   };
 
   return (
@@ -603,10 +716,10 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
  */
 export const useWeb3 = (): Web3ContextType => {
   const context = useContext(Web3Context);
-  
+
   if (!context) {
     throw new Error('useWeb3 must be used within Web3Provider');
   }
-  
+
   return context;
 };

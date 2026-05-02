@@ -3,56 +3,79 @@ import {
   Bank,
   BankAccount,
   BankTransaction,
-  LinkBankResponse
+  LinkBankRequest,
+  LinkBankResponse,
+  VerifyOtpRequest,
+  VietQRResponse,
+  CreditScoreResponse,
 } from '../types/openbanking.types';
 
 export const openBankingApi = {
-  // 1. Lấy danh sách ngân hàng
+  // ===== VietQR Real APIs =====
+
+  // 1. Lấy danh sách ngân hàng (từ VietQR API thật)
   getBanks: async (): Promise<Bank[]> => {
-    const response = await apiClient.get('/mock-banking/banks');
+    const response = await apiClient.get('/openbanking/banks');
     return response.data;
   },
 
-  // 2. Yêu cầu liên kết (Step 1)
-  initiateLink: async (data: { bankId: string; username: string; password?: string }): Promise<LinkBankResponse> => {
-    const response = await apiClient.post('/mock-banking/link', data);
+  // 2. Tạo QR thanh toán VietQR
+  generateQR: async (data: {
+    bankCode: string;
+    accountNumber: string;
+    accountName?: string;
+    amount?: number;
+    description?: string;
+  }): Promise<VietQRResponse> => {
+    const response = await apiClient.post('/openbanking/qr/generate', data);
     return response.data;
   },
 
-  // 3. Xác thực OTP (Step 2)
-  verifyOtp: async (data: { transactionId: string; otp: string }): Promise<LinkBankResponse> => {
-    const response = await apiClient.post('/mock-banking/verify', data);
+  // 3. Tạo QR thanh toán khoản vay
+  generateLoanPaymentQR: async (params: {
+    loanId: string;
+    bankCode: string;
+    accountNumber: string;
+    accountName: string;
+    amount: number;
+  }): Promise<VietQRResponse> => {
+    const response = await apiClient.get('/openbanking/qr/loan-payment', { params });
     return response.data;
   },
 
-  // 4. Lấy danh sách tài khoản
+  // ===== Link Bank Flow =====
+
+  // 4. Bước 1: Yêu cầu liên kết ngân hàng
+  initiateLink: async (data: LinkBankRequest): Promise<LinkBankResponse> => {
+    const response = await apiClient.post('/openbanking/link', data);
+    return response.data;
+  },
+
+  // 5. Bước 2: Xác thực OTP
+  verifyOtp: async (data: VerifyOtpRequest): Promise<LinkBankResponse> => {
+    const response = await apiClient.post('/openbanking/verify', data);
+    return response.data;
+  },
+
+  // ===== Mock Data APIs =====
+
+  // 6. Lấy danh sách tài khoản đã liên kết
   getAccounts: async (username: string): Promise<BankAccount[]> => {
-    const response = await apiClient.get(`/mock-banking/accounts/${username}`);
+    const response = await apiClient.get(`/openbanking/accounts/${username}`);
     return response.data;
   },
 
-  // 5. Lấy lịch sử giao dịch
-  getTransactions: async (username: string): Promise<BankTransaction[]> => {
-    const response = await apiClient.get(`/mock-banking/transactions/${username}`);
+  // 7. Lấy lịch sử giao dịch theo tài khoản
+  getTransactions: async (accountId: string): Promise<BankTransaction[]> => {
+    const response = await apiClient.get(`/openbanking/transactions/${accountId}`);
     return response.data;
   },
 
-  // 6. Lấy điểm tín dụng
-  getCreditScore: async (): Promise<{
-    score: number;
-    rating: string;
-    loanLimit: number;
-    breakdown: {
-      incomeScore: number;
-      spendingScore: number;
-      balanceScore: number;
-      consistencyScore: number;
-      historyScore: number;
-    }
-  }> => {
-    const response = await apiClient.get('/credit/score');
+  // 8. Lấy điểm tín dụng
+  getCreditScore: async (username: string = 'demo_user'): Promise<CreditScoreResponse> => {
+    const response = await apiClient.get(`/openbanking/credit-score/${username}`);
     return response.data;
-  }
+  },
 };
 
 export default openBankingApi;

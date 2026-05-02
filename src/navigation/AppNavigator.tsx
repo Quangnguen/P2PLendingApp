@@ -3,7 +3,7 @@ import { NavigationContainer, DefaultTheme, Theme } from '@react-navigation/nati
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet } from 'react-native';
-import { useAppDispatch, useAuth, checkAuth } from '../store';
+import { useAppDispatch, useAuth, checkAuth, hydrateConnectionsFromCache, loadConnections } from '../store';
 import { useTheme } from '../providers';
 import { RootStackParamList, BottomTabParamList } from './types';
 import { Loading } from '../components/common';
@@ -17,7 +17,11 @@ import {
   BrowseLoansScreen,
   CreateLoanScreen,
   LoanDetailScreen,
-  ConfirmLoanRequestScreen
+  ConfirmLoanRequestScreen,
+  RepayScreen,
+  FundLoanScreen,
+  MyInvestmentsScreen,
+  EditLoanScreen,
 } from '../screens/loans';
 import { ProfileScreen } from '../screens/profile';
 import { WalletScreen } from '../screens/wallet';
@@ -143,7 +147,13 @@ const AppNavigator: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   const initAuth = useCallback(async () => {
-    await dispatch(checkAuth());
+    const result = await dispatch(checkAuth());
+    // Nếu user đã đăng nhập, load connections từ cache ngay lập tức
+    if (result.payload) {
+      dispatch(hydrateConnectionsFromCache());
+      // Sau đó sync với API ở background
+      dispatch(loadConnections());
+    }
     setIsLoading(false);
   }, [dispatch]);
 
@@ -169,7 +179,7 @@ const AppNavigator: React.FC = () => {
   );
 
   if (isLoading) {
-    return <Loading />;
+    return <Loading fullScreen text="Đang tải..." />;
   }
 
   return (
@@ -205,6 +215,10 @@ const AppNavigator: React.FC = () => {
             <Stack.Screen name="CreateLoan" component={CreateLoanScreen} />
             <Stack.Screen name="LoanDetail" component={LoanDetailScreen} />
             <Stack.Screen name="ConfirmLoanRequest" component={ConfirmLoanRequestScreen} />
+            <Stack.Screen name="RepayLoan" component={RepayScreen} />
+            <Stack.Screen name="FundLoan" component={FundLoanScreen} />
+            <Stack.Screen name="EditLoan" component={EditLoanScreen} />
+            <Stack.Screen name="MyInvestments" component={MyInvestmentsScreen} />
 
             {/* Open Banking Screens */}
             <Stack.Screen name="LinkBank" component={LinkBankScreen} />

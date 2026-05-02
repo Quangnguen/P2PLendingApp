@@ -10,10 +10,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import LinearGradient from 'react-native-linear-gradient';
-import { useAppDispatch, useAuth, logout } from '@/store';
+import { useAppDispatch, useAppSelector, useAuth, logout } from '@/store';
+import { loadConnections } from '@/store/slices/openBankingSlice';
 import { useTheme } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
 import { formatCurrency } from '@/utils/formatters';
+import { useEffect } from 'react';
 
 type ProfileScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Profile'>;
@@ -23,33 +25,42 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
   const { user } = useAuth();
   const { colors, isDark, toggleTheme } = useTheme();
+  const { connections } = useAppSelector(state => state.openBanking);
+
+  useEffect(() => {
+    dispatch(loadConnections());
+  }, [dispatch]);
+
+  const isBankLinked = connections.length > 0;
 
   const menuItems = [
     {
       icon: '👤',
       title: 'Thông tin cá nhân',
       subtitle: 'Xem và chỉnh sửa thông tin',
-      onPress: () => {},
+      onPress: () => { },
     },
     {
       icon: '🔐',
       title: 'Bảo mật',
       subtitle: 'Mật khẩu, xác thực 2 bước',
-      onPress: () => {},
+      onPress: () => { },
     },
     {
       icon: '🏦',
       title: 'Tài khoản ngân hàng',
-      subtitle: 'Quản lý tài khoản liên kết',
+      subtitle: isBankLinked ? 'Đã liên kết tài khoản' : 'Quản lý tài khoản liên kết',
       onPress: () => navigation.navigate('BankConnections'),
+      badge: isBankLinked ? 'Đã liên kết' : 'Chưa liên kết',
+      badgeColor: isBankLinked ? colors.greenSuccess : colors.yellowWarning,
     },
     {
       icon: '🆔',
       title: 'Xác minh danh tính (KYC)',
       subtitle: 'Hoàn tất xác minh để vay',
       onPress: () => navigation.navigate('KYCVerification'),
-      badge: 'Chưa xác minh',
-      badgeColor: colors.yellowWarning,
+      badge: user?.isVerified ? 'Đã xác minh' : 'Chưa xác minh',
+      badgeColor: user?.isVerified ? colors.greenSuccess : colors.yellowWarning,
     },
     {
       icon: '📜',
@@ -61,19 +72,19 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       icon: '🔔',
       title: 'Thông báo',
       subtitle: 'Cài đặt thông báo',
-      onPress: () => {},
+      onPress: () => { },
     },
     {
       icon: '❓',
       title: 'Trợ giúp & Hỗ trợ',
       subtitle: 'FAQ, liên hệ hỗ trợ',
-      onPress: () => {},
+      onPress: () => { },
     },
     {
       icon: '📄',
       title: 'Điều khoản & Chính sách',
       subtitle: 'Điều khoản sử dụng',
-      onPress: () => {},
+      onPress: () => { },
     },
   ];
 
@@ -146,9 +157,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             <Switch
               value={!isDark}
               onValueChange={toggleTheme}
-              trackColor={{ 
-                false: colors.darkBorder, 
-                true: colors.accentBlue + '60' 
+              trackColor={{
+                false: colors.darkBorder,
+                true: colors.accentBlue + '60'
               }}
               thumbColor={!isDark ? colors.accentBlue : colors.textGray}
               ios_backgroundColor={colors.darkBorder}
@@ -161,7 +172,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           {menuItems.map((item, index) => (
             <TouchableOpacity
               key={index}
-              style={[styles.menuItem, { backgroundColor: colors.darkSurface }]} 
+              style={[styles.menuItem, { backgroundColor: colors.darkSurface }]}
               onPress={item.onPress}
             >
               <View style={[styles.menuIcon, { backgroundColor: colors.darkBackground }]}>
@@ -183,7 +194,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                   ]}
                 >
                   <Text
-                    style={[styles.menuBadgeText, { color: item.badgeColor }]} 
+                    style={[styles.menuBadgeText, { color: item.badgeColor }]}
                   >
                     {item.badge}
                   </Text>
@@ -195,8 +206,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         </View>
 
         {/* Logout Button */}
-        <TouchableOpacity 
-          style={[styles.logoutButton, { backgroundColor: colors.redError + '15' }]} 
+        <TouchableOpacity
+          style={[styles.logoutButton, { backgroundColor: colors.redError + '15' }]}
           onPress={handleLogout}
         >
           <Text style={styles.logoutIcon}>🚪</Text>

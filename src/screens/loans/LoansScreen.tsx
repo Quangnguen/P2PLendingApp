@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { Card } from '@/components/common';
 import { useTheme } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useAuth, useOpenBanking } from '@/store';
+import { Alert } from 'react-native';
 
 type LoansScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Loans'>;
@@ -34,39 +37,84 @@ interface LoanItem {
 const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState<TabType>('borrowing');
   const { colors } = useTheme();
+  const { user } = useAuth();
+  const { connections } = useOpenBanking();
+  const [borrowingLoans, setBorrowingLoans] = useState<LoanItem[]>([]);
+  const [lendingLoans, setLendingLoans] = useState<LoanItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const borrowingLoans: LoanItem[] = [
-    {
-      id: '1',
-      title: 'Khoản vay tiêu dùng',
-      amount: 50000000,
-      interestRate: 12,
-      status: 'active',
-      dueDate: new Date('2024-12-31'),
-      lender: 'Nguyễn Văn A',
-    },
-    {
-      id: '2',
-      title: 'Khoản vay kinh doanh',
-      amount: 100000000,
-      interestRate: 10,
-      status: 'pending',
-      dueDate: new Date('2025-06-30'),
-      lender: 'Đang chờ',
-    },
-  ];
+  // Helper: Safely convert MongoDB Decimal128 to number
+  const toNum = (val: any): number => {
+    if (val == null) return 0;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return parseFloat(val) || 0;
+    if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+    return parseFloat(String(val)) || 0;
+  };
 
-  const lendingLoans: LoanItem[] = [
-    {
-      id: '3',
-      title: 'Cho vay cá nhân',
-      amount: 20000000,
-      interestRate: 15,
-      status: 'active',
-      dueDate: new Date('2024-09-15'),
-      borrower: 'Trần Văn B',
-    },
-  ];
+  // Fetch data from API - refresh mỗi khi screen được focus
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+
+      const fetchLoans = async () => {
+        setIsLoading(true);
+        try {
+          const { loanApi } = await import('@/api/loan.api');
+
+          // Fetch: my requests (borrowing) + my investments (lending)
+          const [requestsRes, investmentsRes] = await Promise.all([
+            loanApi.getMyRequests().catch(() => []),
+            loanApi.getMyInvestments().catch(() => []),
+          ]);
+
+          if (!isActive) return;
+
+          const requests = Array.isArray(requestsRes?.data || requestsRes) 
+            ? (requestsRes?.data || requestsRes) 
+            : [];
+          const investments = Array.isArray(investmentsRes?.data || investmentsRes) 
+            ? (investmentsRes?.data || investmentsRes) 
+            : [];
+
+          // === BORROWING TAB: My loan requests ===
+          const borrowing: LoanItem[] = requests.map((req: any) => ({
+            id: req._id || req.id,
+            title: `Vay ${req.purpose || 'cá nhân'} - ${toNum(req.loanAmount)} USDT`,
+            amount: toNum(req.loanAmount),
+            interestRate: toNum(req.interestRate),
+            status: req.status === 'pending' ? 'pending' : req.status === 'approved' ? 'pending' : req.status === 'funded' ? 'active' : req.status === 'cancelled' ? 'rejected' : 'pending',
+            dueDate: new Date(req.expiresAt || Date.now()),
+            lender: 'Đang chờ',
+          }));
+          setBorrowingLoans(borrowing);
+
+          // === LENDING TAB: My investments ===
+          const lending: LoanItem[] = investments.map((loan: any) => ({
+            id: loan._id || loan.id,
+            title: `Đầu tư - ${toNum(loan.principalAmount)} USDT`,
+            amount: toNum(loan.principalAmount),
+            interestRate: toNum(loan.interestRate),
+            status: loan.status === 'active' ? 'active' : loan.status === 'repaid' ? 'completed' : 'active',
+            dueDate: new Date(loan.dueDate || Date.now()),
+            borrower: loan.borrowerId?.fullName || 'N/A',
+            lender: 'Tôi',
+          }));
+          setLendingLoans(lending);
+        } catch (err) {
+          console.error('Error fetching loans:', err);
+        } finally {
+          if (isActive) setIsLoading(false);
+        }
+      };
+
+      fetchLoans();
+
+      return () => {
+        isActive = false;
+      };
+    }, [])
+  );
 
   const getStatusColor = (status: LoanItem['status']) => {
     switch (status) {
@@ -92,7 +140,7 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
       case 'completed':
         return 'Hoàn thành';
       case 'rejected':
-        return 'Bị từ chối';
+        return 'Đã hủy';
       default:
         return status;
     }
@@ -104,7 +152,7 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
       onPress={() => navigation.navigate('LoanDetail', { loanId: item.id })}
     >
       <View style={styles.loanHeader}>
-        <Text style={[styles.loanTitle, { color: colors.textWhite }]}>{item.title}</Text>
+        <Text style={[styles.loanTitle, { color: colors.textWhite }]} numberOfLines={1}>{item.title}</Text>
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
           <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
             {getStatusText(item.status)}
@@ -114,7 +162,7 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
 
       <View style={styles.loanAmount}>
         <Text style={[styles.amountLabel, { color: colors.textGray }]}>Số tiền</Text>
-        <Text style={[styles.amountValue, { color: colors.accentBlue }]}>{formatCurrency(item.amount)}</Text>
+        <Text style={[styles.amountValue, { color: colors.accentBlue }]}>{item.amount} USDT</Text>
       </View>
 
       <View style={[styles.loanDetails, { borderTopColor: colors.darkBorder }]}>
@@ -147,7 +195,31 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
         <Text style={[styles.headerTitle, { color: colors.textWhite }]}>Khoản vay của tôi</Text>
         <TouchableOpacity
           style={[styles.createButton, { backgroundColor: colors.accentBlue }]}
-          onPress={() => navigation.navigate('CreateLoan')}
+          onPress={() => {
+            if (user?.kycStatus !== 'verified') {
+              Alert.alert(
+                'Yêu cầu xác thực',
+                'Bạn cần hoàn thành xác thực danh tính (KYC) trước khi tạo yêu cầu vay.',
+                [
+                  { text: 'Để sau', style: 'cancel' },
+                  { text: 'Xác thực ngay', onPress: () => navigation.navigate('KYCVerification' as any) }
+                ]
+              );
+              return;
+            }
+            if (connections.length === 0) {
+              Alert.alert(
+                'Yêu cầu liên kết ngân hàng',
+                'Bạn cần liên kết tài khoản ngân hàng để đảm bảo luồng trả nợ tự động.',
+                [
+                  { text: 'Để sau', style: 'cancel' },
+                  { text: 'Liên kết ngay', onPress: () => navigation.navigate('LinkBank' as any) }
+                ]
+              );
+              return;
+            }
+            navigation.navigate('CreateLoan');
+          }}
         >
           <View style={styles.createButtonContent}>
             <Ionicons name="add" size={18} color={colors.textWhite} />

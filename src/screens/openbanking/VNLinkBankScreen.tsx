@@ -37,13 +37,23 @@ const VNLinkBankScreen = () => {
 
     const handleLogin = async () => {
         if (!username || !password) {
-            toast.error('Vui lòng nhập tên đăng nhập và mật khẩu');
+            toast.error('Vui lòng nhập số tài khoản và tên chủ tài khoản');
             return;
         }
+
+        // Debug: xem bank object chứa gì
+        console.log('=== BANK OBJECT ===', JSON.stringify(bank));
+
+        const bankCode = bank.code || bank.bin || bank.shortName;
+        if (!bankCode) {
+            toast.error('Không xác định được mã ngân hàng');
+            return;
+        }
+
         dispatch(initiateLinkBank({
-            bankId: bank.id,
-            username,
-            password,
+            bankCode,
+            accountNumber: username,
+            accountName: password,
         }));
     }
 
@@ -101,38 +111,36 @@ const VNLinkBankScreen = () => {
                     <Card style={[styles.formCard, { backgroundColor: colors.darkSurface, borderColor: colors.darkBorder }]}>
                         {step === 1 ? (
                             <>
-                                <Text style={[styles.stepTitle, { color: colors.textWhite }]}>Đăng nhập Internet Banking</Text>
+                                <Text style={[styles.stepTitle, { color: colors.textWhite }]}>Nhập thông tin tài khoản</Text>
 
                                 <View style={styles.inputGroup}>
-                                    <Text style={[styles.label, { color: colors.textGray }]}>Tên đăng nhập</Text>
+                                    <Text style={[styles.label, { color: colors.textGray }]}>Số tài khoản</Text>
                                     <View style={[styles.inputContainer, { backgroundColor: colors.darkBackground, borderColor: colors.darkBorder }]}>
-                                        <Ionicons name="person-outline" size={20} color={colors.textGray} style={styles.inputIcon} />
+                                        <Ionicons name="card-outline" size={20} color={colors.textGray} style={styles.inputIcon} />
                                         <TextInput
                                             style={[styles.input, { color: colors.textWhite }]}
                                             value={username}
                                             onChangeText={setUsername}
-                                            placeholder="Nhập tên đăng nhập"
+                                            placeholder="Nhập số tài khoản ngân hàng"
                                             placeholderTextColor={colors.textGray + '80'}
                                             autoCapitalize="none"
+                                            keyboardType="number-pad"
                                         />
                                     </View>
                                 </View>
 
                                 <View style={styles.inputGroup}>
-                                    <Text style={[styles.label, { color: colors.textGray }]}>Mật khẩu</Text>
+                                    <Text style={[styles.label, { color: colors.textGray }]}>Tên chủ tài khoản</Text>
                                     <View style={[styles.inputContainer, { backgroundColor: colors.darkBackground, borderColor: colors.darkBorder }]}>
-                                        <Ionicons name="lock-closed-outline" size={20} color={colors.textGray} style={styles.inputIcon} />
+                                        <Ionicons name="person-outline" size={20} color={colors.textGray} style={styles.inputIcon} />
                                         <TextInput
                                             style={[styles.input, { color: colors.textWhite }]}
                                             value={password}
                                             onChangeText={setPassword}
-                                            placeholder="Nhập mật khẩu"
+                                            placeholder="VD: NGUYEN VAN A"
                                             placeholderTextColor={colors.textGray + '80'}
-                                            secureTextEntry={!showPassword}
+                                            autoCapitalize="characters"
                                         />
-                                        <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-                                            <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textGray} />
-                                        </TouchableOpacity>
                                     </View>
                                 </View>
 
@@ -144,14 +152,14 @@ const VNLinkBankScreen = () => {
                                 )}
 
                                 <Button
-                                    title="Đăng nhập ngay"
+                                    title="Liên kết ngay"
                                     onPress={handleLogin}
                                     loading={isLoading}
                                     style={styles.submitButton}
                                 />
 
                                 <Text style={[styles.noteText, { color: colors.textGray }]}>
-                                    Bằng việc đăng nhập, bạn đồng ý chia sẻ thông tin tài khoản với ứng dụng.
+                                    Bằng việc liên kết, bạn đồng ý chia sẻ thông tin tài khoản với ứng dụng.
                                 </Text>
                             </>
                         ) : (

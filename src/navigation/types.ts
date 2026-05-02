@@ -29,6 +29,19 @@ export type RootStackParamList = {
   LoanDetail: {
     loanId: string;
   };
+  RepayLoan: { loanId: string };
+  FundLoan: { requestId: string };
+  EditLoan: {
+    requestId: string;
+    currentData: {
+      amount: number;
+      interestRate: number;
+      durationDays: number;
+      purpose: string;
+      description: string;
+    };
+  };
+  MyInvestments: undefined;
   ConfirmLoanRequest: {
     amount: number;
     term: number;
@@ -63,9 +76,17 @@ export type RootStackParamList = {
   KYCVerification: undefined;
   KYCCaptureID: {
     side: 'front' | 'back';
+    frontImageUri?: string;
+    frontIdInfo?: any;
   };
-  KYCVerifyInfo: undefined;
-  KYCFaceScan: undefined;
+  KYCVerifyInfo: {
+    idInfo: any; // IDRecognitionResult
+    frontImageUri: string;
+    backImageUri: string;
+  };
+  KYCFaceScan: {
+    frontImageUri: string;
+  };
   KYCSuccess: undefined;
 
   // Messages
