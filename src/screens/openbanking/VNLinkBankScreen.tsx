@@ -4,7 +4,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import { Bank } from "@/types";
 import { loadConnections, useAppDispatch, useAppSelector, useToast } from "@/store";
 import { useEffect, useState } from "react";
-import { initiateLinkBank, resetLinkState, verifyOtpLink } from "@/store/slices/openBankingSlice";
+import { initiateLinkBank, recalculateCreditScore, resetLinkState, verifyOtpLink } from "@/store/slices/openBankingSlice";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Card, Loading } from "@/components/common";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -68,15 +68,15 @@ const VNLinkBankScreen = () => {
         }));
 
         if (verifyOtpLink.fulfilled.match(resultAction)) {
+            // Trigger tính lại điểm tín dụng ngay sau khi liên kết thành công (async, không block)
+            dispatch(recalculateCreditScore()).catch(() => {}); // silent fail nếu lỗi
+            dispatch(loadConnections()); // Reload danh sách account ngay
+
             Alert.alert('Thành công', 'Liên kết tài khoản thành công!', [
                 {
                     text: 'OK',
                     onPress: () => {
-                        // wait a bit for alert to close
-                        setTimeout(() => {
-                            dispatch(loadConnections()); // Reload lại danh sách account
-                            navigation.navigate('BankConnections'); // Quay về màn hình chính
-                        }, 500);
+                        navigation.navigate('Main', { screen: 'HomeTab' } as any);
                     }
                 }
             ]);

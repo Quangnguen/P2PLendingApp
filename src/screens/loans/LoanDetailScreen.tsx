@@ -81,6 +81,13 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
         }
       }
 
+      // Tính tổng tiền phải trả
+      const principal = toNum(d.loanAmount || d.principalAmount);
+      const rate = toNum(d.interestRate);
+      const days = toNum(d.durationDays);
+      const interestAmount = Math.round((principal * rate * days) / (365 * 100) * 100) / 100;
+      const totalRepayment = Math.round((principal + interestAmount) * 100) / 100;
+
       setLoan({
         id: loanId,
         title: d.purpose ? `Khoản vay ${d.purpose}` : 'Chi tiết khoản vay',
@@ -88,11 +95,17 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
         borrowerAvatar: typeof d.borrowerId === 'object' ? (d.borrowerId?.fullName || 'A').charAt(0) : 'A',
         borrowerId: borrowerId,
         lenderId: lenderId,
-        amount: toNum(d.loanAmount || d.principalAmount),
+        amount: principal,
         funded: toNum(d.amountPaid) || 0,
-        interestRate: toNum(d.interestRate),
-        term: toNum(d.durationDays),
-        monthlyPayment: 0,
+        interestRate: rate,
+        term: days,
+        interestAmount,
+        totalRepayment: toNum(d.totalAmount) || totalRepayment,
+        collateralAmount: toNum(d.collateralAmount),
+        collateralType: d.collateralType || 'ETH',
+        dueDate: d.dueDate ? new Date(d.dueDate) : null,
+        expiresAt: d.expiresAt ? new Date(d.expiresAt) : null,
+        loanContractAddress: d.loanContractAddress || null,
         purpose: d.purpose || 'Cá nhân',
         description: d.purposeDescription || d.purpose || 'Không có mô tả',
         creditScore: typeof d.borrowerId === 'object' ? (toNum(d.borrowerId?.creditScore) || 0) : 0,
@@ -456,6 +469,41 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
             <Text style={[styles.detailLabel, { color: colors.textGray }]}>Kỳ hạn</Text>
             <Text style={[styles.detailValue, { color: colors.textWhite }]}>{loan.term} ngày</Text>
           </View>
+
+          {loan.interestAmount > 0 && (
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textGray }]}>Tiền lãi</Text>
+              <Text style={[styles.detailValue, { color: colors.textWhite }]}>{loan.interestAmount?.toFixed(2)} USDT</Text>
+            </View>
+          )}
+
+          {loan.totalRepayment > 0 && (
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textGray }]}>Tổng phải trả</Text>
+              <Text style={[styles.detailValue, { color: colors.yellowWarning, fontWeight: 'bold' }]}>{loan.totalRepayment?.toFixed(2)} USDT</Text>
+            </View>
+          )}
+
+          {loan.collateralAmount > 0 && (
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textGray }]}>Tài sản thế chấp</Text>
+              <Text style={[styles.detailValue, { color: colors.textWhite }]}>{loan.collateralAmount?.toFixed(4)} {loan.collateralType || 'ETH'}</Text>
+            </View>
+          )}
+
+          {loan.dueDate && (
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textGray }]}>Hạn trả</Text>
+              <Text style={[styles.detailValue, { color: colors.textWhite }]}>{new Date(loan.dueDate).toLocaleDateString('vi-VN')}</Text>
+            </View>
+          )}
+
+          {loan.expiresAt && loan.isRequest && (
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textGray }]}>Hết hạn lúc</Text>
+              <Text style={[styles.detailValue, { color: colors.yellowWarning }]}>{new Date(loan.expiresAt).toLocaleDateString('vi-VN')}</Text>
+            </View>
+          )}
 
           <View style={[styles.divider, { backgroundColor: colors.darkBorder }]} />
 

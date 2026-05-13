@@ -120,13 +120,24 @@ const KYCCaptureIDScreen: React.FC<KYCCaptureIDScreenProps> = ({
           const frontIdInfo = route.params.frontIdInfo || {};
           const frontImageUri = route.params.frontImageUri || '';
           
-          // Gộp dữ liệu: ưu tiên mặt trước cho các trường cá nhân, mặt sau cho ngày cấp/nơi cấp
+          // Gộp dữ liệu: ưu tiên mặt trước cho CÁC TRƯỜNG CÁ NHÂN
+          // Mặt sau thường chỉ có issue_date, issue_loc — không có name/dob/sex/...
           const mergedInfo = {
-            ...frontIdInfo,
-            ...response.data,
-            // Đảm bảo không bị ghi đè các trường quan trọng nếu mặt sau trả về rỗng
-            name: frontIdInfo.name || response.data.name,
-            id: frontIdInfo.id || response.data.id,
+            // Thông tin cá nhân: luôn ưu tiên mặt trước
+            id:          frontIdInfo.id          || response.data.id          || '',
+            name:        frontIdInfo.name        || response.data.name        || '',
+            dob:         frontIdInfo.dob         || response.data.dob         || '',
+            sex:         frontIdInfo.sex         || response.data.sex         || '',
+            nationality: frontIdInfo.nationality || response.data.nationality || 'Việt Nam',
+            home:        frontIdInfo.home        || response.data.home        || '',
+            address:     frontIdInfo.address     || response.data.address     || '',
+            doe:         frontIdInfo.doe         || response.data.doe         || '',
+            type:        frontIdInfo.type        || response.data.type        || 'CCCD',
+            features:    frontIdInfo.features    || response.data.features    || '',
+            // Ngày cấp / Nơi cấp: thường nằm trên mặt sau
+            issue_date:  response.data.issue_date || frontIdInfo.issue_date   || '',
+            issue_loc:   response.data.issue_loc  || frontIdInfo.issue_loc    || '',
+            confidence:  response.data.confidence || frontIdInfo.confidence,
           };
           
           navigation.navigate('KYCVerifyInfo', {

@@ -22,6 +22,12 @@ export type RootStackParamList = {
   Loans: undefined;
   Wallet: undefined;
   Profile: undefined;
+  KYCVerification: undefined;
+  PersonalInfo: undefined;
+  Security: undefined;
+  ChangePassword: undefined;
+  TransactionHistory: undefined;
+  Notifications: undefined;
 
   // Loans
   BrowseLoans: undefined;

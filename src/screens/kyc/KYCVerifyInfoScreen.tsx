@@ -35,6 +35,9 @@ const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation, r
   const [placeOfOrigin, setPlaceOfOrigin] = useState(idInfo.home || '');
   const [placeOfResidence, setPlaceOfResidence] = useState(idInfo.address || '');
   const [expiryDate, setExpiryDate] = useState(idInfo.doe || '');
+  const [issueDate, setIssueDate] = useState((idInfo as any).issue_date || '');
+  const [issueLoc, setIssueLoc] = useState((idInfo as any).issue_loc || '');
+
 
   const handleConfirm = () => {
     navigation.navigate('KYCFaceScan', {
@@ -110,7 +113,17 @@ const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation, r
         {renderTextField('Quốc tịch', nationality, setNationality)}
         {renderTextField('Quê quán', placeOfOrigin, setPlaceOfOrigin)}
         {renderTextField('Nơi thường trú', placeOfResidence, setPlaceOfResidence, true)}
-        {renderTextField('Ngày hết hạn', expiryDate, setExpiryDate)}
+
+        <View style={styles.rowFields}>
+          <View style={styles.halfField}>
+            {renderTextField('Ngày hết hạn', expiryDate, setExpiryDate)}
+          </View>
+          <View style={styles.halfField}>
+            {renderTextField('Ngày cấp', issueDate, setIssueDate)}
+          </View>
+        </View>
+
+        {renderTextField('Nơi cấp', issueLoc, setIssueLoc)}
 
         {/* ID Images Preview */}
         <Text style={[styles.sectionTitle, { color: colors.textWhite }]}>Ảnh giấy tờ</Text>

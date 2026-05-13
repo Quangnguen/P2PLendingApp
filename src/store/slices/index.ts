@@ -25,6 +25,8 @@ export {
   hydrateConnectionsFromCache,
   generateQRCode,
   loadCreditScore,
+  recalculateCreditScore,
+  unlinkConnection,
   clearError as clearOpenBankingError,
   clearQRData,
   resetOpenBanking,

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Image, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp, useRoute } from '@react-navigation/native';
 import { Card, Button, Loading } from '@/components/common';
-import { useAppSelector } from '@/store';
+import { useAppSelector, useAppDispatch } from '@/store';
+import { unlinkConnection } from '@/store/slices/openBankingSlice';
 import { useTheme } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
 import { formatCurrency, formatDate } from '@/utils/formatters';
@@ -19,15 +20,18 @@ type BankDetailScreenRouteProp = RouteProp<RootStackParamList, 'BankDetail'>;
 const BankDetailScreen = ({ navigation }: { navigation: any }) => {
     const { colors } = useTheme();
     const route = useRoute<BankDetailScreenRouteProp>();
+    const dispatch = useAppDispatch();
     const { connectionId } = route.params;
 
     // Lấy info account từ Redux Store (đã load ở màn trước)
+    const { user } = useAppSelector(state => state.auth);
     const { connections, banks } = useAppSelector(state => state.openBanking);
     const account = connections.find(c => c.id === connectionId);
     const bank = banks.find(b => b.id === account?.bankId);
 
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
     const [loadingValues, setLoading] = useState(false);
+    const [unlinking, setUnlinking] = useState(false);
 
     const [creditScore, setCreditScore] = useState<{
         score: number;
@@ -42,10 +46,11 @@ const BankDetailScreen = ({ navigation }: { navigation: any }) => {
     }, []);
 
     const loadTransactions = async () => {
+        if (!user?._id) return;
         setLoading(true);
         try {
-            // Gọi API lấy giao dịch (Demo user)
-            const data = await openBankingApi.getTransactions('demo_user');
+            // Gọi API lấy giao dịch (Actual user)
+            const data = await openBankingApi.getTransactions(account?.id || 'demo_user');
             setTransactions(data);
         } catch (err) {
             console.error(err);
@@ -55,16 +60,47 @@ const BankDetailScreen = ({ navigation }: { navigation: any }) => {
     };
 
     const loadCreditScore = async () => {
+        if (!user?._id) return;
         setLoadingCreditScore(true);
         try {
-            // Gọi API lấy điểm tín dụng (Demo user)
-            const data = await openBankingApi.getCreditScore();
+            // Gọi API lấy điểm tín dụng cho user hiện tại
+            const data = await openBankingApi.getCreditScore(user._id);
             setCreditScore(data);
         } catch (err) {
             console.error(err);
         } finally {
             setLoadingCreditScore(false);
         }
+    };
+
+    const handleUnlink = () => {
+        if (!account) return;
+        Alert.alert(
+            '⚠️ Gỡ liên kết ngân hàng',
+            `Bạn có chắc muốn gỡ liên kết tài khoản ${bank?.shortName || ''} (**** ${account.accountNumber.slice(-4)})?\n\nĐiểm tín dụng có thể bị ảnh hưởng sau khi gỡ liên kết.`,
+            [
+                { text: 'Hủy', style: 'cancel' },
+                {
+                    text: 'Gỡ liên kết',
+                    style: 'destructive',
+                    onPress: async () => {
+                        setUnlinking(true);
+                        try {
+                            await dispatch(unlinkConnection(connectionId)).unwrap();
+                            Alert.alert(
+                                '✅ Thành công',
+                                'Đã gỡ liên kết ngân hàng thành công.',
+                                [{ text: 'OK', onPress: () => navigation.goBack() }],
+                            );
+                        } catch (error: any) {
+                            Alert.alert('❌ Lỗi', error || 'Không thể gỡ liên kết. Vui lòng thử lại.');
+                        } finally {
+                            setUnlinking(false);
+                        }
+                    },
+                },
+            ],
+        );
     };
 
     if (!account) return <View style={styles.container}><Text>Không tìm thấy tài khoản</Text></View>;
@@ -199,6 +235,32 @@ const BankDetailScreen = ({ navigation }: { navigation: any }) => {
                         ))
                     )
                 )}
+
+                {/* Gỡ liên kết */}
+                <View style={[styles.unlinkSection, { backgroundColor: colors.darkSurface, borderColor: 'rgba(239, 68, 68, 0.3)' }]}>
+                    <View style={styles.unlinkHeader}>
+                        <Ionicons name="link-outline" size={22} color={colors.redError} />
+                        <Text style={[styles.unlinkTitle, { color: colors.redError }]}>Gỡ liên kết</Text>
+                    </View>
+                    <Text style={[styles.unlinkDescription, { color: colors.textGray }]}>
+                        Gỡ liên kết tài khoản ngân hàng này khỏi ứng dụng. Điểm tín dụng của bạn có thể bị ảnh hưởng.
+                    </Text>
+                    <TouchableOpacity
+                        style={[styles.unlinkButton, unlinking && { opacity: 0.6 }]}
+                        onPress={handleUnlink}
+                        disabled={unlinking}
+                        activeOpacity={0.7}
+                    >
+                        {unlinking ? (
+                            <ActivityIndicator color="#fff" size="small" />
+                        ) : (
+                            <>
+                                <Ionicons name="trash-outline" size={18} color="#fff" />
+                                <Text style={styles.unlinkButtonText}>Gỡ liên kết ngân hàng</Text>
+                            </>
+                        )}
+                    </TouchableOpacity>
+                </View>
 
             </ScrollView>
         </SafeAreaView>
@@ -377,6 +439,44 @@ const styles = StyleSheet.create({
         color: 'white',
         fontWeight: '600',
         fontSize: 12,
+    },
+
+    // Unlink section
+    unlinkSection: {
+        marginTop: 24,
+        marginBottom: 40,
+        padding: 20,
+        borderRadius: 16,
+        borderWidth: 1,
+    },
+    unlinkHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
+        gap: 8,
+    },
+    unlinkTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    unlinkDescription: {
+        fontSize: 13,
+        lineHeight: 20,
+        marginBottom: 16,
+    },
+    unlinkButton: {
+        backgroundColor: '#ef4444',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+        borderRadius: 12,
+        gap: 8,
+    },
+    unlinkButtonText: {
+        color: '#fff',
+        fontSize: 15,
+        fontWeight: '600',
     },
 });
 

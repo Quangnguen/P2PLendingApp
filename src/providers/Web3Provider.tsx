@@ -79,8 +79,9 @@ interface Web3ContextType {
   formatAddress: (address: string | null) => string;
   formatBalance: (balance: string, decimals?: number) => string;
 
-  // Contract interactions (sẽ implement ngày 13)
+  // Contract interactions
   sendTransaction: (tx: ethers.providers.TransactionRequest) => Promise<string | null>;
+  sendUSDT: (toAddress: string, amount: string) => Promise<string | null>;
   signMessage: (message: string) => Promise<string | null>;
 }
 
@@ -526,14 +527,34 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
   }, []);
 
   // =====================
-  // SEND TRANSACTION (Placeholder)
+  // SEND TRANSACTION (Real Ganache)
   // =====================
 
   /**
-   * Gửi giao dịch
+   * Lấy Signer từ Ganache unlocked account
    * 
-   * Phiên bản hiện tại: Simulate giao dịch cho demo
-   * Phiên bản production: Sẽ dùng WalletConnect để ký qua MetaMask
+   * Ganache tự động unlock tất cả accounts → có thể gửi giao dịch
+   * trực tiếp qua JsonRpcProvider.getSigner(address) mà KHÔNG cần private key.
+   * 
+   * ⚠️ Chỉ hoạt động trên Ganache (dev). Production sẽ dùng WalletConnect.
+   */
+  const getSigner = useCallback(() => {
+    if (!connection.address) return null;
+    try {
+      const provider = new ethers.providers.JsonRpcProvider(
+        CURRENT_CHAIN.rpcUrl,
+        { chainId: CURRENT_CHAIN.id, name: CURRENT_CHAIN.name }
+      );
+      // getSigner(address) trả về JsonRpcSigner cho unlocked account
+      return provider.getSigner(connection.address);
+    } catch (err) {
+      console.error('Error getting signer:', err);
+      return null;
+    }
+  }, [connection.address]);
+
+  /**
+   * Gửi giao dịch ETH thật qua Ganache
    */
   const sendTransaction = useCallback(async (
     tx: ethers.providers.TransactionRequest
@@ -544,50 +565,130 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
     }
 
     try {
-      // Validate transaction
       if (!tx.to) {
         Alert.alert('⚠️ Lỗi', 'Địa chỉ đích không hợp lệ');
         return null;
       }
 
-      // Log transaction details for debugging
-      console.log('\n=== SENDING TRANSACTION ===');
+      console.log('\n=== SENDING REAL TRANSACTION ===');
       console.log('From:', connection.address);
       console.log('To:', tx.to);
       console.log('Value:', tx.value?.toString() || '0');
-      console.log('Data:', tx.data?.toString().slice(0, 50) + '...');
 
-      /**
-       * Phiên bản Demo: Simulate transaction
-       * 
-       * Trong production, sẽ gọi:
-       * const provider = new ethers.providers.Web3Provider(walletConnectProvider);
-       * const signer = provider.getSigner();
-       * const txResponse = await signer.sendTransaction(tx);
-       * return txResponse.hash;
-       */
+      const signer = getSigner();
+      if (!signer) {
+        Alert.alert('⚠️ Lỗi', 'Không thể kết nối blockchain. Kiểm tra Ganache.');
+        return null;
+      }
 
-      // Simulate processing time
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Gửi giao dịch thật
+      const txResponse = await signer.sendTransaction({
+        to: tx.to,
+        value: tx.value || 0,
+        data: tx.data || '0x',
+        gasLimit: tx.gasLimit || 100000,
+      });
 
-      // Generate mock transaction hash
-      const mockTxHash = '0x' + Array.from({ length: 64 }, () =>
-        Math.floor(Math.random() * 16).toString(16)
-      ).join('');
+      console.log('📤 TX sent, waiting for confirmation...');
+      console.log('TX Hash:', txResponse.hash);
 
-      console.log('Transaction sent! Hash:', mockTxHash);
+      // Chờ confirm (1 block)
+      const receipt = await txResponse.wait(1);
+      console.log('✅ TX confirmed! Block:', receipt.blockNumber);
+      console.log('Gas used:', receipt.gasUsed.toString());
       console.log('=== TRANSACTION COMPLETE ===\n');
 
-      // Refresh balances after transaction
+      // Refresh balances
       await refreshBalances();
 
-      return mockTxHash;
+      return txResponse.hash;
     } catch (err: any) {
       console.error('Transaction failed:', err);
-      Alert.alert('❌ Giao dịch thất bại', err.message || 'Vui lòng thử lại');
+      if (err.code === 'INSUFFICIENT_FUNDS') {
+        Alert.alert('❌ Không đủ ETH', 'Số dư ETH không đủ để trả gas fee.');
+      } else {
+        Alert.alert('❌ Giao dịch thất bại', err.reason || err.message || 'Vui lòng thử lại');
+      }
       return null;
     }
-  }, [connection, refreshBalances]);
+  }, [connection, getSigner, refreshBalances]);
+
+  /**
+   * Chuyển USDT (ERC20 Token) thật trên Ganache
+   * 
+   * @param toAddress - Địa chỉ nhận USDT
+   * @param amount - Số lượng USDT (ví dụ: "1000" = 1000 USDT)
+   * @returns Transaction hash hoặc null nếu thất bại
+   */
+  const sendUSDT = useCallback(async (
+    toAddress: string,
+    amount: string
+  ): Promise<string | null> => {
+    if (!connection.isConnected || !connection.address) {
+      Alert.alert('⚠️ Lỗi', 'Vui lòng kết nối ví trước khi giao dịch');
+      return null;
+    }
+
+    try {
+      console.log('\n=== SENDING USDT ===');
+      console.log('From:', connection.address);
+      console.log('To:', toAddress);
+      console.log('Amount:', amount, 'USDT');
+
+      const signer = getSigner();
+      if (!signer) {
+        Alert.alert('⚠️ Lỗi', 'Không thể kết nối blockchain');
+        return null;
+      }
+
+      // Tạo USDT contract instance với signer (có thể write)
+      const usdtContract = new ethers.Contract(
+        CONTRACT_ADDRESSES.USDT,
+        [
+          'function transfer(address to, uint256 amount) returns (bool)',
+          'function balanceOf(address) view returns (uint256)',
+          'function decimals() view returns (uint8)',
+        ],
+        signer
+      );
+
+      // Lấy decimals
+      const decimals = await usdtContract.decimals();
+      
+      // Kiểm tra số dư
+      const balance = await usdtContract.balanceOf(connection.address);
+      const amountInWei = ethers.utils.parseUnits(amount, decimals);
+      
+      if (balance.lt(amountInWei)) {
+        const balanceFormatted = ethers.utils.formatUnits(balance, decimals);
+        Alert.alert(
+          '❌ Không đủ USDT',
+          `Số dư: ${parseFloat(balanceFormatted).toFixed(2)} USDT\nCần: ${amount} USDT`
+        );
+        return null;
+      }
+
+      // Gửi USDT transfer
+      console.log('📤 Sending USDT transfer...');
+      const txResponse = await usdtContract.transfer(toAddress, amountInWei);
+      
+      console.log('TX Hash:', txResponse.hash);
+      console.log('⏳ Waiting for confirmation...');
+      
+      const receipt = await txResponse.wait(1);
+      console.log('✅ USDT transfer confirmed! Block:', receipt.blockNumber);
+      console.log('=== USDT TRANSFER COMPLETE ===\n');
+
+      // Refresh balances
+      await refreshBalances();
+
+      return txResponse.hash;
+    } catch (err: any) {
+      console.error('USDT transfer failed:', err);
+      Alert.alert('❌ Chuyển USDT thất bại', err.reason || err.message || 'Vui lòng thử lại');
+      return null;
+    }
+  }, [connection, getSigner, refreshBalances]);
 
   // =====================
   // SIGN MESSAGE (Placeholder)
@@ -694,6 +795,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
 
     // Contract interactions
     sendTransaction,
+    sendUSDT,
     signMessage,
   };
 

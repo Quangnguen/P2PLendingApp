@@ -28,6 +28,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { Card } from '@/components/common';
 import { useTheme, useWeb3 } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
+import { CONTRACT_ADDRESSES } from '@/config/walletconnect';
 import {
   calculateInterest,
   calculateRepaymentAmount,
@@ -46,12 +47,13 @@ type RepayScreenProps = {
 
 const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
-  const { balances, connection } = useWeb3();
+  const { balances, connection, sendUSDT, refreshBalances } = useWeb3();
   const { loanId } = route.params;
   const [isLoading, setIsLoading] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [qrData, setQrData] = useState<any>(null);
   const [showQR, setShowQR] = useState(false);
+  const [repayStep, setRepayStep] = useState('');
 
   // Mock data — thực tế sẽ fetch từ API theo loanId
   const loan = {
@@ -98,14 +100,31 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
   const handleRepay = async () => {
     setIsLoading(true);
     try {
+      // Bước 1: Chuyển USDT on-chain (thật) → P2P contract
+      setRepayStep('Đang chuyển USDT trên blockchain...');
+      
+      const txHash = await sendUSDT(CONTRACT_ADDRESSES.P2P_LENDING, totalRepayment);
+      
+      if (!txHash) {
+        setIsLoading(false);
+        setRepayStep('');
+        return;
+      }
+
+      // Bước 2: Gọi API backend ghi nhận trả nợ
+      setRepayStep('Đang ghi nhận trên hệ thống...');
       const { loanApi } = await import('@/api/loan.api');
       await loanApi.repayLoan(loanId, {
-        txHash: '0x' + Date.now().toString(16),
+        txHash,
         amount: parseFloat(totalRepayment),
       });
+
+      // Bước 3: Refresh balances
+      await refreshBalances();
+
       Alert.alert(
         '✅ Trả nợ thành công',
-        `Bạn đã trả ${formatCurrency(totalRepayment)} USDT.\nTài sản thế chấp ${loan.collateralAmount} ETH đã được hoàn trả.`,
+        `Bạn đã trả ${formatCurrency(totalRepayment)} USDT.\nTài sản thế chấp ${loan.collateralAmount} ETH đã được hoàn trả.\n\nTX: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (error: any) {
@@ -114,6 +133,7 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
     } finally {
       setIsLoading(false);
       setShowConfirm(false);
+      setRepayStep('');
     }
   };
 

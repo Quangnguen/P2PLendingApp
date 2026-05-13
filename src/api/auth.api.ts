@@ -59,6 +59,11 @@ export const authApi = {
       _id: data._id || data.id,
     };
   },
+
+  changePassword: async (data: any): Promise<{ message: string }> => {
+    const response = await apiClient.put<ApiResponse<null>>('/auth/change-password', data);
+    return { message: response.data.message };
+  },
 };
 
 export default authApi;

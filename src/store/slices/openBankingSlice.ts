@@ -120,10 +120,17 @@ export const hydrateConnectionsFromCache = createAsyncThunk(
 );
 
 // 4b. Lấy danh sách tài khoản đã liên kết
-// Load từ cache trước để hiển thị ngay, sau đó merge với API
 export const loadConnections = createAsyncThunk(
   'openBanking/loadConnections',
-  async (_, { rejectWithValue }) => {
+  async (_, { rejectWithValue, getState }) => {
+    const state = getState() as { auth: { user: { _id: string } | null } };
+    const userId = state.auth.user?._id;
+
+    if (!userId) return [];
+
+    // Helper: lấy 4 số cuối để dedup (handle cả '****1234' và '1234567890')
+    const getLast4 = (num: string) => (num || '').replace(/\*/g, '').slice(-4);
+
     // Bước 1: Đọc cache trước
     let cachedAccounts: BankAccount[] = [];
     try {
@@ -137,25 +144,36 @@ export const loadConnections = createAsyncThunk(
 
     // Bước 2: Gọi API để đồng bộ
     try {
-      const apiAccounts = await openBankingApi.getAccounts('demo_user');
+      const apiAccounts = await openBankingApi.getAccounts();
 
-      // Merge: API accounts + cached accounts chưa có trong API
+      // Merge: API accounts là nguồn chính
+      // Chỉ thêm cached account nếu KHÔNG có trong API (so sánh bankId + 4 số cuối)
       let mergedAccounts = [...apiAccounts];
       for (const cached of cachedAccounts) {
         const existsInApi = mergedAccounts.some(
-          (acc) => acc.bankId === cached.bankId && acc.accountNumber === cached.accountNumber,
+          (acc) =>
+            acc.bankId === cached.bankId &&
+            getLast4(acc.accountNumber) === getLast4(cached.accountNumber),
         );
         if (!existsInApi) {
           mergedAccounts.push(cached);
         }
       }
 
+      // Deduplicate mergedAccounts theo bankId + 4 số cuối (clean dữ liệu cũ)
+      const seen = new Set<string>();
+      mergedAccounts = mergedAccounts.filter((acc) => {
+        const key = `${acc.bankId}_${getLast4(acc.accountNumber)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
       // Lưu merged result vào cache
       await AsyncStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(mergedAccounts));
 
       return mergedAccounts;
     } catch (error: any) {
-      // API fail → trả về cache data nếu có
       if (cachedAccounts.length > 0) {
         console.log('📦 Using cached connections (API failed)');
         return cachedAccounts;
@@ -184,15 +202,64 @@ export const generateQRCode = createAsyncThunk(
   }
 );
 
+// 7. Force tính lại điểm tín dụng (sau khi liên kết ngân hàng mới)
+export const recalculateCreditScore = createAsyncThunk(
+  'openBanking/recalculateCreditScore',
+  async (_, { rejectWithValue }) => {
+    try {
+      const score = await openBankingApi.recalculateCreditScore();
+      return score;
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Lỗi tính điểm tín dụng');
+    }
+  }
+);
+
 // 6. Lấy điểm tín dụng
 export const loadCreditScore = createAsyncThunk(
   'openBanking/loadCreditScore',
-  async (username: string = 'demo_user', { rejectWithValue }) => {
+  async (userId: string | undefined, { rejectWithValue, getState }) => {
+    // Ưu tiên dùng userId truyền vào, nếu không có thì lấy từ state
+    let targetUserId = userId;
+    if (!targetUserId) {
+      const state = getState() as { auth: { user: { _id: string } | null } };
+      targetUserId = state.auth.user?._id;
+    }
+
+    if (!targetUserId) {
+      return rejectWithValue('Không tìm thấy thông tin người dùng để tính điểm');
+    }
+
     try {
-      const score = await openBankingApi.getCreditScore(username);
+      const score = await openBankingApi.getCreditScore(targetUserId);
       return score;
     } catch (error: any) {
       return rejectWithValue(error.message || 'Lỗi tải điểm tín dụng');
+    }
+  }
+);
+
+// 8. Gỡ liên kết ngân hàng
+export const unlinkConnection = createAsyncThunk(
+  'openBanking/unlinkConnection',
+  async (connectionId: string, { rejectWithValue, getState }) => {
+    try {
+      await openBankingApi.unlinkBank(connectionId);
+
+      // Cập nhật cache AsyncStorage: xóa connection đã unlink
+      try {
+        const state = getState() as { openBanking: OpenBankingState };
+        const updatedConnections = state.openBanking.connections.filter(
+          (acc) => acc.id !== connectionId,
+        );
+        await AsyncStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(updatedConnections));
+      } catch (storageErr) {
+        console.warn('Error updating cache after unlink:', storageErr);
+      }
+
+      return connectionId;
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Không thể gỡ liên kết');
     }
   }
 );
@@ -212,7 +279,11 @@ const openBankingSlice = createSlice({
     clearQRData: (state) => {
       state.qrData = null;
     },
-    resetOpenBanking: () => initialState,
+    resetOpenBanking: () => {
+      // Xóa cache AsyncStorage khi reset (logout)
+      AsyncStorage.removeItem(CONNECTIONS_STORAGE_KEY).catch(() => {});
+      return initialState;
+    },
   },
   extraReducers: (builder) => {
     // Load Banks
@@ -265,6 +336,8 @@ const openBankingSlice = createSlice({
         }
         state.totalBalance = state.connections.reduce((sum, acc) => sum + acc.balance, 0);
       }
+      // Reset credit score — sẽ được tính lại bởi recalculateCreditScore dispatch tiếp theo
+      state.creditScore = null;
     });
     builder.addCase(verifyOtpLink.rejected, (state, action) => {
       state.isLoading = false;
@@ -323,6 +396,36 @@ const openBankingSlice = createSlice({
       state.creditScore = action.payload;
     });
     builder.addCase(loadCreditScore.rejected, (state, action) => {
+      state.isLoading = false;
+      state.error = action.payload as string;
+    });
+
+    // Recalculate Credit Score (sau khi liên kết ngân hàng mới)
+    builder.addCase(recalculateCreditScore.pending, (state) => {
+      state.isLoading = true;
+    });
+    builder.addCase(recalculateCreditScore.fulfilled, (state, action) => {
+      state.isLoading = false;
+      state.creditScore = action.payload;
+    });
+    builder.addCase(recalculateCreditScore.rejected, (state) => {
+      state.isLoading = false; // silent fail, không hiện error
+    });
+
+    // Unlink Connection
+    builder.addCase(unlinkConnection.pending, (state) => {
+      state.isLoading = true;
+      state.error = null;
+    });
+    builder.addCase(unlinkConnection.fulfilled, (state, action) => {
+      state.isLoading = false;
+      // Xóa connection khỏi state
+      state.connections = state.connections.filter((acc) => acc.id !== action.payload);
+      state.totalBalance = state.connections.reduce((sum, acc) => sum + acc.balance, 0);
+      // Reset credit score vì số lượng NH liên kết đã thay đổi
+      state.creditScore = null;
+    });
+    builder.addCase(unlinkConnection.rejected, (state, action) => {
       state.isLoading = false;
       state.error = action.payload as string;
     });

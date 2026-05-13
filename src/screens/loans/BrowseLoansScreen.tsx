@@ -67,10 +67,11 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
           const data = response?.data || response || [];
           
           const requests = (Array.isArray(data) ? data : [])
-            .filter((req: any) => {
-              const borrowerId = req.borrowerId?._id || req.borrowerId;
-              return borrowerId !== user?._id;
-            })
+            // Tạm thời comment filter này để bạn có thể xem thiết kế UI bằng chính khoản vay của mình
+            // .filter((req: any) => {
+            //   const borrowerId = req.borrowerId?._id || req.borrowerId;
+            //   return borrowerId !== user?._id;
+            // })
             .map((req: any) => ({
               id: req._id || req.id,
               borrowerName: req.borrowerId?.fullName || 'Ẩn danh',

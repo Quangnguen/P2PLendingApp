@@ -23,8 +23,8 @@ import {
   MyInvestmentsScreen,
   EditLoanScreen,
 } from '../screens/loans';
-import { ProfileScreen } from '../screens/profile';
-import { WalletScreen } from '../screens/wallet';
+import { ProfileScreen, PersonalInfoScreen, SecurityScreen, ChangePasswordScreen } from '../screens/profile';
+import { WalletScreen, TransactionHistoryScreen } from '../screens/wallet';
 import {
   LinkBankScreen,
   BankConnectionsScreen,
@@ -39,6 +39,7 @@ import {
   KYCFaceScanScreen,
   KYCSuccessScreen
 } from '../screens/kyc';
+import { NotificationScreen } from '../screens/notifications';
 import VNLinkBankScreen from '@/screens/openbanking/VNLinkBankScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -233,6 +234,15 @@ const AppNavigator: React.FC = () => {
             {/* Messages Screens */}
             <Stack.Screen name="Messages" component={MessagesScreen} />
             <Stack.Screen name="ChatDetail" component={ChatDetailScreen} />
+            
+            {/* Wallet Screens */}
+            <Stack.Screen name="TransactionHistory" component={TransactionHistoryScreen} />
+
+            {/* Profile Screens */}
+            <Stack.Screen name="PersonalInfo" component={PersonalInfoScreen} />
+            <Stack.Screen name="Security" component={SecurityScreen} />
+            <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+            <Stack.Screen name="Notifications" component={NotificationScreen} />
 
             {/* KYC Screens */}
             <Stack.Screen name="KYCVerification" component={KYCVerificationScreen} />

@@ -41,17 +41,30 @@ import {
   formatCurrency,
 } from '../../utils/loanCalculations';
 import { LOAN_CONFIG } from '../../utils/constants';
+import { CONTRACT_ADDRESSES } from '../../config/walletconnect';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { useAuth, useOpenBanking } from '../../store';
+import { useAuth, useOpenBanking, useAppDispatch } from '../../store';
+import { loadCreditScore } from '../../store/slices/openBankingSlice';
+import { ethers } from 'ethers';
 
-const MOCK_CREDIT_SCORE = 680;
+
 const MOCK_ETH_PRICE = '2500';
 
 const CreateLoanScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { balances } = useWeb3();
+  const { balances, sendTransaction, refreshBalances } = useWeb3();
   const { user } = useAuth();
-  const { connections } = useOpenBanking();
+  const dispatch = useAppDispatch();
+  const { connections, creditScore } = useOpenBanking();
+
+  // Lấy điểm tín dụng thực từ store, fallback 0 nếu chưa có
+  const realCreditScore = creditScore?.score ?? 0;
+
+  // Hạn mức vay động: lấy từ credit score (backend tính), fallback MAX_AMOUNT nếu chưa có
+  const dynamicMaxAmount = creditScore?.loanLimit && creditScore.loanLimit > 0
+    ? creditScore.loanLimit
+    : parseFloat(LOAN_CONFIG.MAX_AMOUNT);
+  const dynamicMinAmount = parseFloat(LOAN_CONFIG.MIN_AMOUNT);
 
   // =====================
   // STATE
@@ -65,16 +78,35 @@ const CreateLoanScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPreview, setShowPreview] = useState(false);
+  const [creatingStep, setCreatingStep] = useState('');
+  const [dynamicRatio, setDynamicRatio] = useState(150);
 
   // =====================
   // EFFECTS
   // =====================
+  // Load điểm tín dụng khi vào màn hình
+  useEffect(() => {
+    if (!creditScore && user?._id) {
+      dispatch(loadCreditScore(user._id));
+    }
+  }, [creditScore, user?._id, dispatch]);
+
   useEffect(() => {
     if (amount && interestRate) {
+      // Logic tỉ lệ thế chấp động theo điểm tín dụng giống Backend:
+      // >= 800: 100%, >= 650: 120%, >= 500: 150%, < 500: 200%
+      let ratio = LOAN_CONFIG.MIN_COLLATERAL_RATIO; // 150
+      if (realCreditScore >= 800) ratio = 100;
+      else if (realCreditScore >= 650) ratio = 120;
+      else if (realCreditScore >= 500) ratio = 150;
+      else if (realCreditScore > 0) ratio = 200;
+      
+      setDynamicRatio(ratio);
+
       const collateral = calculateRequiredCollateral(
         amount,
         MOCK_ETH_PRICE,
-        LOAN_CONFIG.MIN_COLLATERAL_RATIO
+        ratio
       );
       setRequiredCollateral(collateral);
       const interest = calculateInterest(amount, parseFloat(interestRate), duration);
@@ -86,13 +118,14 @@ const CreateLoanScreen: React.FC = () => {
       setInterestAmount('0');
       setTotalRepayment('0');
     }
-  }, [amount, duration, interestRate]);
+  }, [amount, duration, interestRate, realCreditScore]);
 
   useEffect(() => {
-    const suggested = getSuggestedInterestRate(MOCK_CREDIT_SCORE);
+    const score = realCreditScore > 0 ? realCreditScore : 650; // fallback 650 nếu chưa có điểm
+    const suggested = getSuggestedInterestRate(score);
     const defaultRate = Math.round((suggested.min + suggested.max) / 2);
     setInterestRate(defaultRate.toString());
-  }, []);
+  }, [realCreditScore]);
 
   // Check prerequisites
   useEffect(() => {
@@ -136,10 +169,19 @@ const CreateLoanScreen: React.FC = () => {
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
-    const amountValidation = validateLoanAmount(amount);
-    if (!amountValidation.isValid) {
-      newErrors.amount = amountValidation.error || 'Số tiền không hợp lệ';
+
+    // Validate số tiền vay theo hạn mức động
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      newErrors.amount = 'Số tiền không hợp lệ';
+    } else if (amountNum < dynamicMinAmount) {
+      newErrors.amount = `Số tiền tối thiểu là ${dynamicMinAmount} USDT`;
+    } else if (amountNum > dynamicMaxAmount) {
+      newErrors.amount = creditScore?.loanLimit
+        ? `Vượt hạn mức tín dụng (${formatCurrency(dynamicMaxAmount.toString())} USDT). Nâng điểm tín dụng để tăng hạn mức.`
+        : `Số tiền tối đa là ${formatCurrency(dynamicMaxAmount.toString())} USDT`;
     }
+
     const rateValidation = validateInterestRate(parseFloat(interestRate));
     if (!rateValidation.isValid) {
       newErrors.interestRate = rateValidation.error || 'Lãi suất không hợp lệ';
@@ -162,6 +204,24 @@ const CreateLoanScreen: React.FC = () => {
   const handleConfirm = async () => {
     setIsLoading(true);
     try {
+      // Bước 1: Gửi ETH thế chấp vào P2P Lending contract (on-chain)
+      setCreatingStep('Đang khóa ETH thế chấp trên blockchain...');
+      
+      const collateralInWei = ethers.utils.parseEther(requiredCollateral);
+      const txHash = await sendTransaction({
+        to: CONTRACT_ADDRESSES.COLLATERAL_MANAGER,
+        value: collateralInWei,
+      });
+
+      if (!txHash) {
+        // sendTransaction đã hiện alert lỗi
+        setIsLoading(false);
+        setCreatingStep('');
+        return;
+      }
+
+      // Bước 2: Gọi API backend để tạo loan request (gửi kèm txHash)
+      setCreatingStep('Đang ghi nhận yêu cầu vay...');
       const { loanApi } = await import('../../api/loan.api');
       await loanApi.createLoanRequest({
         loanAmount: parseFloat(amount),
@@ -170,10 +230,15 @@ const CreateLoanScreen: React.FC = () => {
         purpose: 'personal',
         collateralType: 'crypto',
         collateralAmount: parseFloat(requiredCollateral),
-      });
+        collateralTxHash: txHash,
+      } as any);
+
+      // Bước 3: Refresh balances
+      await refreshBalances();
+
       Alert.alert(
         '✅ Thành công',
-        'Yêu cầu vay đã được tạo. Đang chờ người cho vay.',
+        `Yêu cầu vay đã được tạo.\n${requiredCollateral} ETH đã được khóa thế chấp.\n\nTX: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (error: any) {
@@ -182,6 +247,7 @@ const CreateLoanScreen: React.FC = () => {
     } finally {
       setIsLoading(false);
       setShowPreview(false);
+      setCreatingStep('');
     }
   };
 
@@ -277,9 +343,13 @@ const CreateLoanScreen: React.FC = () => {
           {/* Header - Điểm tín dụng */}
           <View style={styles.creditScoreCard}>
             <Text style={styles.creditScoreLabel}>Điểm tín dụng của bạn</Text>
-            <Text style={styles.creditScoreValue}>{MOCK_CREDIT_SCORE}</Text>
+            <Text style={styles.creditScoreValue}>
+              {realCreditScore > 0 ? realCreditScore : 'Chưa có'}
+            </Text>
             <Text style={styles.creditScoreHint}>
-              Lãi suất gợi ý: {getSuggestedInterestRate(MOCK_CREDIT_SCORE).min}% - {getSuggestedInterestRate(MOCK_CREDIT_SCORE).max}%
+              {realCreditScore > 0
+                ? `Lãi suất gợi ý: ${getSuggestedInterestRate(realCreditScore).min}% - ${getSuggestedInterestRate(realCreditScore).max}%`
+                : 'Liên kết ngân hàng để tính điểm tín dụng'}
             </Text>
           </View>
 
@@ -301,7 +371,8 @@ const CreateLoanScreen: React.FC = () => {
               </View>
               {errors.amount && <Text style={styles.errorText}>{errors.amount}</Text>}
               <Text style={styles.inputHint}>
-                Tối thiểu {LOAN_CONFIG.MIN_AMOUNT} - Tối đa {LOAN_CONFIG.MAX_AMOUNT} USDT
+                Tối thiểu {dynamicMinAmount} - Tối đa {formatCurrency(dynamicMaxAmount.toString())} USDT
+                {creditScore?.loanLimit ? ` (Hạn mức tín dụng)` : ''}
               </Text>
             </View>
 
@@ -348,7 +419,7 @@ const CreateLoanScreen: React.FC = () => {
               </View>
               <View style={styles.calculationDivider} />
               <View style={styles.calculationRow}>
-                <Text style={styles.calculationLabel}>ETH cần thế chấp (150%)</Text>
+                <Text style={styles.calculationLabel}>ETH cần thế chấp ({dynamicRatio}%)</Text>
                 <Text style={[styles.calculationValue, styles.ethValue]}>{requiredCollateral} ETH</Text>
               </View>
               <View style={styles.calculationRow}>

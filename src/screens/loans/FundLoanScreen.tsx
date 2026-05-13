@@ -27,6 +27,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { Card } from '@/components/common';
 import { useTheme, useWeb3 } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
+import { CONTRACT_ADDRESSES } from '@/config/walletconnect';
 import {
   calculateInterest,
   calculateRepaymentAmount,
@@ -42,7 +43,7 @@ type FundLoanScreenProps = {
 
 const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
-  const { balances, connection } = useWeb3();
+  const { balances, connection, sendUSDT, refreshBalances } = useWeb3();
   const { user } = useAuth();
   const { connections } = useOpenBanking();
   const { requestId } = route.params;
@@ -50,6 +51,7 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
   const [showConfirm, setShowConfirm] = useState(false);
   const [loanRequest, setLoanRequest] = useState<any>(null);
   const [loadingData, setLoadingData] = useState(true);
+  const [fundingStep, setFundingStep] = useState('');
 
   // Helper: Safely convert MongoDB Decimal128 to number
   const toNum = (val: any): number => {
@@ -67,39 +69,38 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
         const { loanApi } = await import('@/api/loan.api');
         const data = await loanApi.getRequestDetail(requestId);
         const reqData = data?.data || data;
+
+        // Tính collateral ratio thực tế
+        const loanAmount = toNum(reqData.loanAmount);
+        const collateral = toNum(reqData.collateralAmount);
+        // collateralRatio = (collateral * ethPrice / loanAmount) * 100
+        // Tạm dùng giá ETH mặc định 2500 USDT
+        const ethPrice = 2500;
+        const collateralValueUSDT = collateral * ethPrice;
+        const actualCollateralRatio = loanAmount > 0
+          ? Math.round((collateralValueUSDT / loanAmount) * 100)
+          : 0;
+
         setLoanRequest({
           id: requestId,
           borrowerAlias: reqData.borrowerId?.fullName || `Borrower #${requestId.slice(-4)}`,
-          amount: String(toNum(reqData.loanAmount) || 2000),
-          interestRate: toNum(reqData.interestRate) || 12,
-          duration: toNum(reqData.durationDays) || 30,
-          purpose: reqData.purpose || 'Không rõ',
+          borrowerWallet: reqData.borrowerId?.walletAddress || null,
+          amount: String(loanAmount),
+          interestRate: toNum(reqData.interestRate),
+          duration: toNum(reqData.durationDays),
+          purpose: reqData.purpose || 'Cá nhân',
           purposeDescription: reqData.purposeDescription || '',
-          creditScore: toNum(reqData.borrowerId?.creditScore) || 680,
-          collateralAmount: String(toNum(reqData.collateralAmount)),
-          collateralRatio: 150,
-          onTimePayments: toNum(reqData.borrowerId?.successfulLoans),
-          totalPayments: toNum(reqData.borrowerId?.successfulLoans) + 1,
+          creditScore: toNum(reqData.borrowerId?.creditScore),
+          collateralAmount: String(collateral),
+          collateralRatio: actualCollateralRatio,
+          reputationScore: toNum(reqData.borrowerId?.reputationScore),
           createdAt: new Date(reqData.createdAt).getTime(),
+          expiresAt: reqData.expiresAt ? new Date(reqData.expiresAt).getTime() : null,
         });
       } catch (err) {
         console.error('Error fetching request:', err);
-        // Fallback mock data
-        setLoanRequest({
-          id: requestId,
-          borrowerAlias: `Borrower #${requestId.slice(-4)}`,
-          amount: '2000',
-          interestRate: 12,
-          duration: 30,
-          purpose: 'Kinh doanh',
-          purposeDescription: '',
-          creditScore: 700,
-          collateralAmount: '1.2',
-          collateralRatio: 150,
-          onTimePayments: 3,
-          totalPayments: 4,
-          createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
-        });
+        Alert.alert('❌ Lỗi', 'Không thể tải thông tin khoản vay.');
+        navigation.goBack();
       } finally {
         setLoadingData(false);
       }
@@ -156,11 +157,31 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
   const handleFund = async () => {
     setIsLoading(true);
     try {
+      // Bước 1: Chuyển USDT on-chain (thật)
+      setFundingStep('Đang chuyển USDT trên blockchain...');
+      
+      // Địa chỉ nhận: P2P Lending contract hoặc borrower wallet
+      const recipientAddress = CONTRACT_ADDRESSES.P2P_LENDING;
+      const txHash = await sendUSDT(recipientAddress, loanRequest.amount);
+      
+      if (!txHash) {
+        // sendUSDT đã hiện alert lỗi rồi
+        setIsLoading(false);
+        setFundingStep('');
+        return;
+      }
+
+      // Bước 2: Gọi API backend để ghi nhận khoản đầu tư
+      setFundingStep('Đang ghi nhận trên hệ thống...');
       const { loanApi } = await import('@/api/loan.api');
-      await loanApi.fundLoan(requestId, { txHash: '0x' + Date.now().toString(16) });
+      await loanApi.fundLoan(requestId, { txHash });
+
+      // Bước 3: Refresh balances
+      await refreshBalances();
+
       Alert.alert(
         '✅ Cấp vốn thành công',
-        `Bạn đã cấp vốn ${formatCurrency(loanRequest.amount)} USDT.\nLợi nhuận dự kiến: ${formatCurrency(profit)} USDT.`,
+        `Bạn đã cấp vốn ${formatCurrency(loanRequest.amount)} USDT.\nLợi nhuận dự kiến: ${formatCurrency(profit)} USDT.\n\nTX: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (error: any) {
@@ -169,6 +190,7 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
     } finally {
       setIsLoading(false);
       setShowConfirm(false);
+      setFundingStep('');
     }
   };
 
@@ -242,7 +264,13 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
                 {loanRequest.borrowerAlias}
               </Text>
               <Text style={[styles.borrowerMeta, { color: colors.textGray }]}>
-                Yêu cầu từ 2 ngày trước
+                Yêu cầu {(() => {
+                  const diffMs = Date.now() - loanRequest.createdAt;
+                  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                  if (diffDays === 0) return 'hôm nay';
+                  if (diffDays === 1) return '1 ngày trước';
+                  return `${diffDays} ngày trước`;
+                })()}
               </Text>
             </View>
           </View>
@@ -259,12 +287,12 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
             </View>
             <View style={[styles.statDivider, { backgroundColor: colors.darkBorder }]} />
             <View style={styles.statItem}>
-              <Text style={[styles.statLabel, { color: colors.textGray }]}>Trả đúng hạn</Text>
-              <Text style={[styles.statValue, { color: colors.textWhite }]}>
-                {loanRequest.onTimePayments}/{loanRequest.totalPayments}
+              <Text style={[styles.statLabel, { color: colors.textGray }]}>Uy tín</Text>
+              <Text style={[styles.statValue, { color: loanRequest.reputationScore >= 70 ? colors.greenSuccess : colors.yellowWarning }]}>
+                {loanRequest.reputationScore || 'N/A'}
               </Text>
-              <Text style={[styles.statBadge, { color: colors.greenSuccess }]}>
-                {Math.round((loanRequest.onTimePayments / loanRequest.totalPayments) * 100)}%
+              <Text style={[styles.statBadge, { color: loanRequest.reputationScore >= 70 ? colors.greenSuccess : colors.yellowWarning }]}>
+                {loanRequest.reputationScore >= 80 ? 'Rất tốt' : loanRequest.reputationScore >= 60 ? 'Khá' : 'Mới'}
               </Text>
             </View>
           </View>

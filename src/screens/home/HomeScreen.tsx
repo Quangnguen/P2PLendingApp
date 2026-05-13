@@ -9,13 +9,18 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import notificationApi from '@/api/notification.api';
 import LinearGradient from 'react-native-linear-gradient';
 import { Card } from '@/components/common';
 import { useAppDispatch, useAuth, useOpenBanking, loadConnections } from '@/store';
-import { useTheme } from '@/providers';
+import { loadUser } from '@/store/slices/authSlice';
+import { loadCreditScore } from '@/store/slices/openBankingSlice';
+import { useTheme, useWeb3 } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
 import { formatCurrency, formatDate } from '@/utils/formatters';
+import { getRatingColor } from '@/utils';
 import { loanApi } from '@/api/loan.api';
+import { useFocusEffect } from '@react-navigation/native';
 
 type HomeScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -25,11 +30,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const { colors } = useTheme();
   const dispatch = useAppDispatch();
   const { user } = useAuth();
-  const { connections, totalBalance } = useOpenBanking();
+  const { connections, totalBalance, creditScore } = useOpenBanking();
+  const { balances, connection, refreshBalances, formatBalance, formatAddress } = useWeb3();
   const [refreshing, setRefreshing] = React.useState(false);
 
   const [featuredLoans, setFeaturedLoans] = React.useState<any[]>([]);
   const [recentTransactions, setRecentTransactions] = React.useState<any[]>([]);
+  const [myPendingLoansCount, setMyPendingLoansCount] = React.useState<number>(0);
+  const [unreadNotifications, setUnreadNotifications] = React.useState<number>(0);
 
   // Helper: Safely convert numeric values from API
   const toNum = (val: any): number => {
@@ -42,7 +50,21 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   const fetchData = React.useCallback(async () => {
     try {
-      // 1. Fetch Featured Loans (others' loans)
+      // 1. Fetch my pending loan requests count
+      try {
+        const myReqRes = await loanApi.getMyRequests();
+        const myReqData = myReqRes?.data || myReqRes || [];
+        if (Array.isArray(myReqData)) {
+          const pendingCount = myReqData.filter(
+            (r: any) => r?.status === 'pending' || r?.status === 'PENDING'
+          ).length;
+          setMyPendingLoansCount(pendingCount);
+        }
+      } catch (reqErr) {
+        console.log('Error fetching my requests:', reqErr);
+      }
+
+      // 2. Fetch Featured Loans (others' loans)
       const pendingRes = await loanApi.getPendingRequests();
       const pendingData = pendingRes?.data || pendingRes || [];
       if (Array.isArray(pendingData)) {
@@ -54,7 +76,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         setFeaturedLoans(othersLoans.slice(0, 2));
       }
 
-      // 2. Fetch Recent Transactions (real repayments/activities)
+      // 3. Fetch Recent Transactions
       try {
         const txRes = await loanApi.getMyTransactions();
         const txData = txRes?.data || txRes || [];
@@ -64,10 +86,31 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       } catch (txErr) {
         console.log('Error fetching transactions:', txErr);
       }
+
+      // 4. Fetch Unread Notifications
+      try {
+        const notiRes = await notificationApi.getMyNotifications(1, 0);
+        if (notiRes && notiRes.data) {
+          setUnreadNotifications(notiRes.data.unreadCount || 0);
+        }
+      } catch (notiErr) {
+        console.log('Error fetching notifications:', notiErr);
+      }
     } catch (error) {
       console.log('Error fetching home data:', error);
     }
   }, [user?._id]);
+
+  // Refresh user data (kycStatus, etc.) mỗi khi vào HomeScreen
+  useFocusEffect(
+    React.useCallback(() => {
+      dispatch(loadUser());
+      // Load credit score nếu chưa có
+      if (!creditScore && user?._id) {
+        dispatch(loadCreditScore(user._id));
+      }
+    }, [dispatch, creditScore, user?._id])
+  );
 
   // Tự động load connections và dữ liệu khi vào HomeScreen
   useEffect(() => {
@@ -77,8 +120,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await dispatch(loadConnections());
-    await fetchData();
+    await Promise.all([
+      dispatch(loadUser()),         // Sync kycStatus từ server
+      dispatch(loadConnections()),  // Sync bank connections
+      refreshBalances(),            // Sync crypto balances
+      user?._id ? dispatch(loadCreditScore(user._id)) : Promise.resolve(),
+      fetchData(),                  // Sync loan data
+    ]);
     setRefreshing(false);
   };
 
@@ -87,7 +135,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       icon: '🏦',
       title: 'Liên kết ngân hàng',
       subtitle: 'Kết nối tài khoản',
-      onPress: () => navigation.navigate('LinkBank'),
+      onPress: () => connections && connections.length > 0
+        ? navigation.navigate('BankConnections')
+        : navigation.navigate('LinkBank'),
     },
     {
       icon: '💸',
@@ -105,7 +155,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       icon: '📋',
       title: 'Lịch sử',
       subtitle: 'Giao dịch của bạn',
-      onPress: () => navigation.navigate('LoansTab' as any),
+      onPress: () => navigation.navigate('TransactionHistory' as any),
     },
   ];
 
@@ -125,12 +175,25 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             <Text style={[styles.greeting, { color: colors.textGray }]}>Xin chào 👋</Text>
             <Text style={[styles.userName, { color: colors.textWhite }]}>{user?.fullName || 'Người dùng'}</Text>
           </View>
-          <TouchableOpacity
-            style={[styles.notificationButton, { backgroundColor: colors.darkSurface }]}
-            onPress={() => navigation.navigate('Messages')}
-          >
-            <Text style={styles.notificationIcon}>🔔</Text>
-          </TouchableOpacity>
+          <View style={styles.headerIcons}>
+            <TouchableOpacity
+              style={[styles.notificationButton, { backgroundColor: colors.darkSurface, marginRight: 8 }]}
+              onPress={() => navigation.navigate('Messages')}
+            >
+              <Text style={styles.notificationIcon}>💬</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.notificationButton, { backgroundColor: colors.darkSurface }]}
+              onPress={() => navigation.navigate('Notifications' as any)}
+            >
+              <Text style={styles.notificationIcon}>🔔</Text>
+              {unreadNotifications > 0 && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>{unreadNotifications}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Balance Card */}
@@ -152,10 +215,62 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             <View style={styles.balanceDivider} />
             <View style={styles.balanceItem}>
               <Text style={styles.balanceItemLabel}>Khoản vay đang xử lý</Text>
-              <Text style={[styles.balanceItemValue, { color: colors.textWhite }]}>2</Text>
+              <Text style={[styles.balanceItemValue, { color: colors.textWhite }]}>{myPendingLoansCount}</Text>
             </View>
           </View>
         </LinearGradient>
+
+        {/* Crypto Wallet + Credit Score */}
+        <View style={styles.statsRow}>
+          {/* Crypto Wallet */}
+          <TouchableOpacity
+            style={[styles.statCard, { backgroundColor: colors.darkSurface }]}
+            onPress={() => navigation.navigate('WalletTab' as any)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.statEmoji}>💎</Text>
+            <Text style={[styles.statLabel, { color: colors.textGray }]}>ETH</Text>
+            <Text style={[styles.statValue, { color: colors.textWhite }]} numberOfLines={1}>
+              {formatBalance(balances.eth, 4)}
+            </Text>
+            <Text style={[styles.statLabel, { color: colors.textGray, marginTop: 6 }]}>USDT</Text>
+            <Text style={[styles.statValue, { color: colors.textWhite }]} numberOfLines={1}>
+              {formatBalance(balances.usdt, 2)}
+            </Text>
+            {connection.address && (
+              <Text style={[styles.walletAddress, { color: colors.accentBlue }]}>
+                {formatAddress(connection.address)}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Credit Score */}
+          <TouchableOpacity
+            style={[styles.statCard, { backgroundColor: colors.darkSurface }]}
+            onPress={() => navigation.navigate('BankConnections')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.statEmoji}>📊</Text>
+            <Text style={[styles.statLabel, { color: colors.textGray }]}>Điểm tín dụng</Text>
+            {creditScore ? (
+              <>
+                <Text style={[styles.creditScoreValue, { color: getRatingColor(creditScore.rating) }]}>
+                  {creditScore.score}
+                </Text>
+                <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(creditScore.rating) + '20' }]}>
+                  <Text style={[styles.ratingText, { color: getRatingColor(creditScore.rating) }]}>
+                    {creditScore.rating}
+                  </Text>
+                </View>
+                <Text style={[styles.statLabel, { color: colors.textGray, marginTop: 4 }]}>
+                  Hạn mức: {creditScore.loanLimit?.toLocaleString()} USDT
+                </Text>
+              </>
+            ) : (
+              <Text style={[styles.statNoData, { color: colors.textGray }]}>Chưa có điểm</Text>
+            )}
+          </TouchableOpacity>
+        </View>
 
         {/* Link Bank CTA */}
         {(!connections || connections.length === 0) && (
@@ -215,34 +330,52 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               </View>
             </Card>
           ) : (
-            featuredLoans.map((loan) => (
-              <Card
-                key={loan._id || loan.id}
-                style={styles.loanCard}
-                onPress={() => navigation.navigate('LoanDetail', { loanId: loan._id || loan.id })}
-              >
-                <View style={styles.loanHeader}>
-                  <Text style={[styles.loanTitle, { color: colors.textWhite }]}>
-                    {loan.purpose || `Vay ${toNum(loan.loanAmount)} USDT`}
-                  </Text>
-                  <View style={[styles.interestBadge, { backgroundColor: colors.greenSuccess + '20' }]}>
-                    <Text style={[styles.interestText, { color: colors.greenSuccess }]}>{toNum(loan.interestRate)}%/năm</Text>
+            featuredLoans.map((loan) => {
+              const borrowerName = typeof loan.borrowerId === 'object'
+                ? (loan.borrowerId?.fullName || 'Ẩn danh')
+                : 'Người vay';
+              const borrowerInitial = borrowerName.charAt(0).toUpperCase();
+
+              return (
+                <Card
+                  key={loan._id || loan.id}
+                  style={styles.loanCard}
+                  onPress={() => navigation.navigate('LoanDetail', { loanId: loan._id || loan.id })}
+                >
+                  <View style={styles.loanHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}>
+                      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.accentBlue + '30', justifyContent: 'center', alignItems: 'center' }}>
+                        <Text style={{ color: colors.accentBlue, fontWeight: 'bold', fontSize: 16 }}>{borrowerInitial}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.loanTitle, { color: colors.textWhite }]} numberOfLines={1}>
+                          {borrowerName}
+                        </Text>
+                        <Text style={{ color: colors.textGray, fontSize: 12 }} numberOfLines={1}>
+                          {loan.purpose || 'Cá nhân'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={[styles.interestBadge, { backgroundColor: colors.greenSuccess + '20' }]}>
+                      <Text style={[styles.interestText, { color: colors.greenSuccess }]}>{toNum(loan.interestRate)}%/năm</Text>
+                    </View>
                   </View>
-                </View>
-                <View style={styles.loanDetails}>
-                  <View style={styles.loanDetail}>
-                    <Text style={[styles.loanDetailLabel, { color: colors.textGray }]}>Số tiền</Text>
-                    <Text style={[styles.loanDetailValue, { color: colors.textWhite }]}>
-                      {formatCurrency(toNum(loan.loanAmount))}
-                    </Text>
+                  <View style={styles.loanDetails}>
+                    <View style={styles.loanDetail}>
+                      <Text style={[styles.loanDetailLabel, { color: colors.textGray }]}>Số tiền</Text>
+                      <Text style={[styles.loanDetailValue, { color: colors.textWhite }]}>
+                        {toNum(loan.loanAmount)} USDT
+                      </Text>
+                    </View>
+                    <View style={styles.loanDetail}>
+                      <Text style={[styles.loanDetailLabel, { color: colors.textGray }]}>Kỳ hạn</Text>
+                      <Text style={[styles.loanDetailValue, { color: colors.textWhite }]}>{toNum(loan.durationDays)} ngày</Text>
+                    </View>
                   </View>
-                  <View style={styles.loanDetail}>
-                    <Text style={[styles.loanDetailLabel, { color: colors.textGray }]}>Kỳ hạn</Text>
-                    <Text style={[styles.loanDetailValue, { color: colors.textWhite }]}>{toNum(loan.durationDays)} ngày</Text>
-                  </View>
-                </View>
-              </Card>
-            ))
+                </Card>
+              );
+            })
+
           )}
         </View>
 
@@ -338,6 +471,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 4,
   },
+  headerIcons: {
+    flexDirection: 'row',
+  },
   userName: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -351,6 +487,23 @@ const styles = StyleSheet.create({
   },
   notificationIcon: {
     fontSize: 20,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#FF3B30',
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  notificationBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   balanceCard: {
     borderRadius: 20,
@@ -523,6 +676,58 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
+  },
+
+  // Stats Row (Crypto + Credit Score)
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  statCard: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+  },
+  statEmoji: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  creditScoreValue: {
+    fontSize: 32,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  ratingBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  ratingText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  statNoData: {
+    fontSize: 14,
+    marginTop: 12,
+  },
+  walletAddress: {
+    fontSize: 11,
+    marginTop: 8,
+    fontWeight: '500',
   },
 });
 

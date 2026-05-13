@@ -24,11 +24,11 @@ export const SUPPORTED_CHAINS = {
   GANACHE: {
     id: 1337,
     name: 'Ganache Local',
-    // Sử dụng localhost cho cả Android (physical device) và iOS
-    // Với physical device: cần chạy `adb reverse tcp:7545 tcp:7545` trước
-    // để forward localhost:7545 trên điện thoại → 127.0.0.1:7545 trên PC
-    // Với Emulator: dùng 10.0.2.2 (Android) hoặc 127.0.0.1 (iOS)
-    rpcUrl: 'http://10.0.2.2:7545',
+    // Physical device (USB): cần chạy trước:
+    //   adb reverse tcp:7545 tcp:7545
+    //   adb reverse tcp:9000 tcp:9000
+    // Emulator Android: đổi thành 'http://10.0.2.2:7545'
+    rpcUrl: 'http://localhost:7545',
     blockExplorer: '', // Ganache không có block explorer
     wcNamespace: 'eip155:1337',
   },

@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAppDispatch, useAppSelector, useAuth, logout } from '@/store';
-import { loadConnections } from '@/store/slices/openBankingSlice';
+import { loadConnections, resetOpenBanking } from '@/store/slices/openBankingSlice';
 import { useTheme } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
 import { formatCurrency } from '@/utils/formatters';
@@ -38,13 +38,13 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       icon: '👤',
       title: 'Thông tin cá nhân',
       subtitle: 'Xem và chỉnh sửa thông tin',
-      onPress: () => { },
+      onPress: () => navigation.navigate('PersonalInfo'),
     },
     {
       icon: '🔐',
       title: 'Bảo mật',
       subtitle: 'Mật khẩu, xác thực 2 bước',
-      onPress: () => { },
+      onPress: () => navigation.navigate('Security'),
     },
     {
       icon: '🏦',
@@ -59,14 +59,22 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       title: 'Xác minh danh tính (KYC)',
       subtitle: 'Hoàn tất xác minh để vay',
       onPress: () => navigation.navigate('KYCVerification'),
-      badge: user?.isVerified ? 'Đã xác minh' : 'Chưa xác minh',
-      badgeColor: user?.isVerified ? colors.greenSuccess : colors.yellowWarning,
+      badge: user?.kycStatus === 'verified'
+        ? 'Đã xác minh'
+        : user?.kycStatus === 'pending'
+          ? 'Đang xử lý'
+          : 'Chưa xác minh',
+      badgeColor: user?.kycStatus === 'verified'
+        ? colors.greenSuccess
+        : user?.kycStatus === 'pending'
+          ? colors.accentBlue
+          : colors.yellowWarning,
     },
     {
       icon: '📜',
       title: 'Lịch sử giao dịch',
       subtitle: 'Xem tất cả giao dịch',
-      onPress: () => navigation.navigate('Wallet'),
+      onPress: () => navigation.navigate('TransactionHistory'),
     },
     {
       icon: '🔔',
@@ -89,6 +97,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   ];
 
   const handleLogout = async () => {
+    dispatch(resetOpenBanking()); // Xóa bank connections cache
     await dispatch(logout(undefined));
   };
 
@@ -123,19 +132,23 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                {formatCurrency(15000000)}
+                {connections.length > 0 ? `${connections.length}` : '0'}
               </Text>
-              <Text style={styles.statLabel}>Tổng đầu tư</Text>
+              <Text style={styles.statLabel}>Tài khoản NH</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>3</Text>
-              <Text style={styles.statLabel}>Khoản vay</Text>
+              <Text style={styles.statValue}>
+                {user?.kycStatus === 'verified' ? '✓' : user?.kycStatus === 'pending' ? '⏳' : '--'}
+              </Text>
+              <Text style={styles.statLabel}>KYC</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>750</Text>
-              <Text style={styles.statLabel}>Điểm tín dụng</Text>
+              <Text style={styles.statValue}>
+                {user?.isVerified ? '✓' : '--'}
+              </Text>
+              <Text style={styles.statLabel}>Email</Text>
             </View>
           </View>
         </LinearGradient>

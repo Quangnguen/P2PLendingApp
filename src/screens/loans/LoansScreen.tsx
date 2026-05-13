@@ -62,10 +62,10 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
         try {
           const { loanApi } = await import('@/api/loan.api');
 
-          // Fetch: my requests (borrowing) + my investments (lending)
-          const [requestsRes, investmentsRes] = await Promise.all([
+          // Fetch: my requests + my loans
+          const [requestsRes, loansRes] = await Promise.all([
             loanApi.getMyRequests().catch(() => []),
-            loanApi.getMyInvestments().catch(() => []),
+            loanApi.getMyLoans().catch(() => []),
           ]);
 
           if (!isActive) return;
@@ -73,29 +73,48 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
           const requests = Array.isArray(requestsRes?.data || requestsRes) 
             ? (requestsRes?.data || requestsRes) 
             : [];
-          const investments = Array.isArray(investmentsRes?.data || investmentsRes) 
-            ? (investmentsRes?.data || investmentsRes) 
+          const loans = Array.isArray(loansRes?.data || loansRes) 
+            ? (loansRes?.data || loansRes) 
             : [];
 
-          // === BORROWING TAB: My loan requests ===
-          const borrowing: LoanItem[] = requests.map((req: any) => ({
+          // === BORROWING TAB ===
+          // 1. Pending/Cancelled requests (chưa thành khoản vay thực tế)
+          const pendingRequests = requests.filter((r: any) => r.status !== 'funded').map((req: any) => ({
             id: req._id || req.id,
             title: `Vay ${req.purpose || 'cá nhân'} - ${toNum(req.loanAmount)} USDT`,
             amount: toNum(req.loanAmount),
             interestRate: toNum(req.interestRate),
-            status: req.status === 'pending' ? 'pending' : req.status === 'approved' ? 'pending' : req.status === 'funded' ? 'active' : req.status === 'cancelled' ? 'rejected' : 'pending',
+            status: req.status === 'pending' ? 'pending' : req.status === 'approved' ? 'pending' : req.status === 'cancelled' ? 'rejected' : 'pending',
             dueDate: new Date(req.expiresAt || Date.now()),
             lender: 'Đang chờ',
           }));
-          setBorrowingLoans(borrowing);
+          
+          // 2. Active/Repaid loans (đã giải ngân)
+          const myBorrowingLoans = loans.filter((l: any) => {
+            const bId = l.borrowerId?._id || l.borrowerId;
+            return bId === user?._id;
+          }).map((loan: any) => ({
+            id: loan._id || loan.id,
+            title: `Khoản vay - ${toNum(loan.principalAmount)} USDT`,
+            amount: toNum(loan.principalAmount),
+            interestRate: toNum(loan.interestRate),
+            status: loan.status === 'repaid' ? 'completed' : loan.status === 'active' ? 'active' : loan.status === 'overdue' ? 'rejected' : 'active',
+            dueDate: new Date(loan.dueDate || Date.now()),
+            lender: loan.lenderId?.fullName || 'N/A',
+          }));
+
+          setBorrowingLoans([...pendingRequests, ...myBorrowingLoans].sort((a, b) => b.dueDate.getTime() - a.dueDate.getTime()));
 
           // === LENDING TAB: My investments ===
-          const lending: LoanItem[] = investments.map((loan: any) => ({
+          const lending: LoanItem[] = loans.filter((l: any) => {
+            const lId = l.lenderId?._id || l.lenderId;
+            return lId === user?._id;
+          }).map((loan: any) => ({
             id: loan._id || loan.id,
             title: `Đầu tư - ${toNum(loan.principalAmount)} USDT`,
             amount: toNum(loan.principalAmount),
             interestRate: toNum(loan.interestRate),
-            status: loan.status === 'active' ? 'active' : loan.status === 'repaid' ? 'completed' : 'active',
+            status: loan.status === 'repaid' ? 'completed' : loan.status === 'active' ? 'active' : loan.status === 'overdue' ? 'rejected' : 'active',
             dueDate: new Date(loan.dueDate || Date.now()),
             borrower: loan.borrowerId?.fullName || 'N/A',
             lender: 'Tôi',
