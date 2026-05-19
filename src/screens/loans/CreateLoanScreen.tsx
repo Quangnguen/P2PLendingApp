@@ -43,7 +43,9 @@ import {
 import { LOAN_CONFIG } from '../../utils/constants';
 import { CONTRACT_ADDRESSES } from '../../config/walletconnect';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { useAuth, useOpenBanking, useAppDispatch } from '../../store';
+import { useAuth } from '../../store';
+import { useAppDispatch } from '../../store/hooks';
+import { useOpenBanking, useToast } from '../../store';
 import { loadCreditScore } from '../../store/slices/openBankingSlice';
 import { ethers } from 'ethers';
 
@@ -52,10 +54,11 @@ const MOCK_ETH_PRICE = '2500';
 
 const CreateLoanScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { balances, sendTransaction, refreshBalances } = useWeb3();
+  const { balances, sendTransaction, getProvider, refreshBalances } = useWeb3();
   const { user } = useAuth();
   const dispatch = useAppDispatch();
   const { connections, creditScore } = useOpenBanking();
+  const toast = useToast();
 
   // Lấy điểm tín dụng thực từ store, fallback 0 nếu chưa có
   const realCreditScore = creditScore?.score ?? 0;
@@ -93,13 +96,13 @@ const CreateLoanScreen: React.FC = () => {
 
   useEffect(() => {
     if (amount && interestRate) {
-      // Logic tỉ lệ thế chấp động theo điểm tín dụng giống Backend:
-      // >= 800: 100%, >= 650: 120%, >= 500: 150%, < 500: 200%
-      let ratio = LOAN_CONFIG.MIN_COLLATERAL_RATIO; // 150
-      if (realCreditScore >= 800) ratio = 100;
-      else if (realCreditScore >= 650) ratio = 120;
-      else if (realCreditScore >= 500) ratio = 150;
-      else if (realCreditScore > 0) ratio = 200;
+      // Logic tỉ lệ thế chấp động theo điểm tín dụng đồng bộ với Backend
+      let ratio = 190; // Default (POOR)
+      if (realCreditScore >= 800) ratio = 135;
+      else if (realCreditScore >= 700) ratio = 145;
+      else if (realCreditScore >= 600) ratio = 155;
+      else if (realCreditScore >= 500) ratio = 165;
+      else if (realCreditScore >= 400) ratio = 175;
       
       setDynamicRatio(ratio);
 
@@ -201,26 +204,69 @@ const CreateLoanScreen: React.FC = () => {
     }
   };
 
-  const handleConfirm = async () => {
+    const handleConfirm = async () => {
     setIsLoading(true);
     try {
-      // Bước 1: Gửi ETH thế chấp vào P2P Lending contract (on-chain)
-      setCreatingStep('Đang khóa ETH thế chấp trên blockchain...');
+      // Bước 1: Gửi yêu cầu vay và khóa ETH trên smart contract
+      setCreatingStep('Đang khởi tạo yêu cầu vay trên blockchain...');
       
       const collateralInWei = ethers.utils.parseEther(requiredCollateral);
+      const principalInWei = ethers.utils.parseUnits(amount, 6); // USDT 6 decimals
+
+      const p2pInterface = new ethers.utils.Interface([
+        'function createLoanRequest((address loanToken, address collateralToken, uint256 principal, uint256 interestRate, uint256 collateralAmount, uint256 duration)) returns (uint256)',
+        'event LoanRequestCreated(uint256 indexed requestId, address indexed borrower, uint256 principal)'
+      ]);
+
+      const interestRateBP = Math.round(parseFloat(interestRate) * 100);
+      const durationSeconds = duration * 86400;
+
+      const data = p2pInterface.encodeFunctionData('createLoanRequest', [[
+        CONTRACT_ADDRESSES.USDT,
+        ethers.constants.AddressZero, // ETH as collateral
+        principalInWei,
+        interestRateBP,
+        collateralInWei,
+        durationSeconds
+      ]]);
+
       const txHash = await sendTransaction({
-        to: CONTRACT_ADDRESSES.COLLATERAL_MANAGER,
+        to: CONTRACT_ADDRESSES.P2P_LENDING,
         value: collateralInWei,
+        data: data,
+        gasLimit: 500000, // Tăng gas limit để tránh lỗi out of gas
       });
 
       if (!txHash) {
-        // sendTransaction đã hiện alert lỗi
         setIsLoading(false);
         setCreatingStep('');
         return;
       }
 
-      // Bước 2: Gọi API backend để tạo loan request (gửi kèm txHash)
+      // Lấy onChainRequestId từ event
+      setCreatingStep('Đang xác nhận giao dịch...');
+      let onChainRequestId = undefined;
+      const provider = getProvider();
+      if (provider) {
+        try {
+          const receipt = await provider.getTransactionReceipt(txHash);
+          for (const log of receipt.logs) {
+            try {
+              const parsedLog = p2pInterface.parseLog(log);
+              if (parsedLog.name === 'LoanRequestCreated') {
+                onChainRequestId = parsedLog.args.requestId.toNumber();
+                break;
+              }
+            } catch (e) {
+              // ignore logs from other contracts
+            }
+          }
+        } catch (e) {
+          console.log('Error parsing receipt:', e);
+        }
+      }
+
+      // Bước 2: Gọi API backend để tạo loan request (gửi kèm txHash và onChainRequestId)
       setCreatingStep('Đang ghi nhận yêu cầu vay...');
       const { loanApi } = await import('../../api/loan.api');
       await loanApi.createLoanRequest({
@@ -231,19 +277,21 @@ const CreateLoanScreen: React.FC = () => {
         collateralType: 'crypto',
         collateralAmount: parseFloat(requiredCollateral),
         collateralTxHash: txHash,
+        onChainRequestId: onChainRequestId,
       } as any);
 
       // Bước 3: Refresh balances
       await refreshBalances();
 
-      Alert.alert(
-        '✅ Thành công',
+      toast.success(
         `Yêu cầu vay đã được tạo.\n${requiredCollateral} ETH đã được khóa thế chấp.\n\nTX: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
+        'Thành công'
       );
+      setShowPreview(false);
+      navigation.goBack();
     } catch (error: any) {
       const msg = error?.response?.data?.message || error.message || 'Không thể tạo yêu cầu vay';
-      Alert.alert('❌ Lỗi', msg);
+      toast.error(msg, 'Lỗi');
     } finally {
       setIsLoading(false);
       setShowPreview(false);

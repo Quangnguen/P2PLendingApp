@@ -39,6 +39,8 @@ import {
   formatCurrency,
 } from '@/utils/loanCalculations';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useToast } from '@/store';
+import { ethers } from 'ethers';
 
 type RepayScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'RepayLoan'>;
@@ -47,39 +49,57 @@ type RepayScreenProps = {
 
 const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
-  const { balances, connection, sendUSDT, refreshBalances } = useWeb3();
+  const { balances, connection, sendUSDT, sendTransaction, refreshBalances } = useWeb3();
   const { loanId } = route.params;
+  const toast = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [qrData, setQrData] = useState<any>(null);
   const [showQR, setShowQR] = useState(false);
   const [repayStep, setRepayStep] = useState('');
 
-  // Mock data — thực tế sẽ fetch từ API theo loanId
-  const loan = {
-    id: loanId,
-    amount: '1000', // USDT
-    interestRate: 12,
-    duration: 30,
-    startDate: Date.now() - 20 * 24 * 60 * 60 * 1000, // 20 ngày trước
-    dueDate: Date.now() + 10 * 24 * 60 * 60 * 1000, // 10 ngày nữa
-    collateralAmount: '0.75',
-    lender: '0x742d...bE21',
-    status: 'ACTIVE' as const,
+  const [loan, setLoan] = useState<any>(null);
+  const [loadingData, setLoadingData] = useState(true);
+
+  // Helper: Safely convert numeric values from API
+  const toNum = (val: any): number => {
+    if (val == null) return 0;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return parseFloat(val) || 0;
+    if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+    return parseFloat(String(val)) || 0;
   };
 
-  // Tính toán
-  const daysRemaining = calculateDaysRemaining(loan.dueDate);
-  const overdue = isLoanOverdue(loan.dueDate);
-  const interest = calculateInterest(loan.amount, loan.interestRate, loan.duration);
-  const penalty = calculatePenalty(loan.amount, loan.dueDate);
-  const totalRepayment = (
-    parseFloat(loan.amount) + parseFloat(interest) + parseFloat(penalty)
-  ).toFixed(2);
-  const progressPercent = Math.min(
-    ((loan.duration - Math.max(daysRemaining, 0)) / loan.duration) * 100,
-    100
-  );
+  useEffect(() => {
+    const fetchLoanData = async () => {
+      try {
+        const { loanApi } = await import('@/api/loan.api');
+        const res = await loanApi.getLoanDetail(loanId);
+        const data = res?.data || res;
+        
+        setLoan({
+          id: data._id || loanId,
+          amount: toNum(data.principalAmount || data.loanAmount).toString(),
+          interestRate: toNum(data.interestRate),
+          duration: toNum(data.durationDays),
+          startDate: new Date(data.startDate || Date.now()).getTime(),
+          dueDate: new Date(data.dueDate || Date.now() + 30 * 24 * 3600000).getTime(),
+          collateralAmount: toNum(data.collateralAmount).toString(),
+          lender: data.lenderId?.fullName || 'Người cho vay',
+          lenderWallet: data.lenderId?.walletAddress,
+          status: data.status,
+          loanContractAddress: data.loanContractAddress,
+        });
+      } catch (err) {
+        console.log('Error fetching loan:', err);
+        Alert.alert('Lỗi', 'Không thể tải chi tiết khoản vay');
+        navigation.goBack();
+      } finally {
+        setLoadingData(false);
+      }
+    };
+    fetchLoanData();
+  }, [loanId]);
 
   // Fetch QR repayment data từ Open Banking
   useEffect(() => {
@@ -97,14 +117,77 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
     fetchQRData();
   }, [loanId]);
 
+  if (loadingData || !loan) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.darkBackground }]} edges={['top']}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={colors.accentBlue} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Tính toán
+  const daysRemaining = calculateDaysRemaining(loan.dueDate);
+  const overdue = isLoanOverdue(loan.dueDate);
+  const interest = calculateInterest(loan.amount, loan.interestRate, loan.duration);
+  const penalty = calculatePenalty(loan.amount, loan.dueDate);
+  const totalRepayment = (
+    parseFloat(loan.amount) + parseFloat(interest) + parseFloat(penalty)
+  ).toFixed(2);
+  const progressPercent = Math.min(
+    ((loan.duration - Math.max(daysRemaining, 0)) / loan.duration) * 100,
+    100
+  );
+
   const handleRepay = async () => {
     setIsLoading(true);
     try {
-      // Bước 1: Chuyển USDT on-chain (thật) → P2P contract
-      setRepayStep('Đang chuyển USDT trên blockchain...');
-      
-      const txHash = await sendUSDT(CONTRACT_ADDRESSES.P2P_LENDING, totalRepayment);
-      
+      let txHash = null;
+
+      if (loan.loanContractAddress) {
+        // LUỒNG CHUẨN BLOCKCHAIN
+        setRepayStep('Đang ủy quyền chuyển USDT cho Smart Contract...');
+        
+        // 1. Approve USDT cho Loan contract
+        const usdtInterface = new ethers.utils.Interface(['function approve(address spender, uint256 amount) returns (bool)']);
+        const approveData = usdtInterface.encodeFunctionData('approve', [
+          loan.loanContractAddress,
+          ethers.utils.parseUnits(totalRepayment, 6)
+        ]);
+        
+        const approveTx = await sendTransaction({
+          to: CONTRACT_ADDRESSES.USDT,
+          data: approveData
+        });
+
+        if (!approveTx) {
+          setIsLoading(false);
+          setRepayStep('');
+          return;
+        }
+
+        // 2. Gọi hàm repay trên Loan contract
+        setRepayStep('Đang xử lý trả nợ và hoàn trả ETH...');
+        const loanInterface = new ethers.utils.Interface(['function repay()']);
+        const repayData = loanInterface.encodeFunctionData('repay', []);
+        
+        txHash = await sendTransaction({
+          to: loan.loanContractAddress,
+          data: repayData,
+          gasLimit: 500000 // Tăng gas limit vì thực hiện nhiều việc
+        });
+      } else {
+        // LUỒNG CŨ
+        setRepayStep('Đang chuyển USDT trên blockchain...');
+        if (!loan.lenderWallet) {
+          toast.error('Người cho vay chưa liên kết ví nhận thanh toán.', 'Lỗi');
+          setIsLoading(false);
+          return;
+        }
+        txHash = await sendUSDT(loan.lenderWallet, totalRepayment);
+      }
+
       if (!txHash) {
         setIsLoading(false);
         setRepayStep('');
@@ -122,14 +205,14 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
       // Bước 3: Refresh balances
       await refreshBalances();
 
-      Alert.alert(
-        '✅ Trả nợ thành công',
+      toast.success(
         `Bạn đã trả ${formatCurrency(totalRepayment)} USDT.\nTài sản thế chấp ${loan.collateralAmount} ETH đã được hoàn trả.\n\nTX: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
+        'Trả nợ thành công'
       );
+      navigation.goBack();
     } catch (error: any) {
       const msg = error?.response?.data?.message || error.message || 'Không thể trả nợ. Vui lòng thử lại.';
-      Alert.alert('❌ Lỗi', msg);
+      toast.error(msg, 'Lỗi');
     } finally {
       setIsLoading(false);
       setShowConfirm(false);

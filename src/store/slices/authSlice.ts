@@ -1,7 +1,9 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authApi } from '../../api/auth.api';
 import { storage } from '../../utils/storage';
 import { STORAGE_KEYS } from '../../utils/constants';
+import { CONNECTIONS_STORAGE_KEY } from './openBankingSlice';
 import { User, LoginRequest, RegisterRequest, AuthResponse, LoginOtpRequiredResponse } from '../../types/auth.types';
 
 // Type guard để kiểm tra response có phải OTP required không
@@ -203,6 +205,8 @@ const authSlice = createSlice({
           state.isAuthenticated = true;
           state.pendingLoginEmail = null;
           state.pendingDeviceInfo = null;
+          // Xóa cache open banking của user trước để user mới không thấy data cũ
+          AsyncStorage.removeItem(CONNECTIONS_STORAGE_KEY).catch(() => {});
         }
       })
       .addCase(login.rejected, (state, action) => {
@@ -247,6 +251,8 @@ const authSlice = createSlice({
         state.isAuthenticated = true;
         state.pendingLoginEmail = null;
         state.pendingDeviceInfo = null;
+        // Xóa cache open banking của user trước
+        AsyncStorage.removeItem(CONNECTIONS_STORAGE_KEY).catch(() => {});
       })
       .addCase(verifyLoginOtp.rejected, (state, action) => {
         state.isLoading = false;

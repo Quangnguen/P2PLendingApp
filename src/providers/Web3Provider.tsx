@@ -23,7 +23,11 @@ import { ethers } from 'ethers';
 import {
   CURRENT_CHAIN,
   CONTRACT_ADDRESSES,
+  GANACHE_ACCOUNTS,
 } from '../config/walletconnect';
+
+import { authApi } from '../api/auth.api';
+import { useToast } from '../store';
 
 // =====================
 // TYPES
@@ -73,6 +77,12 @@ interface Web3ContextType {
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   refreshBalances: () => Promise<void>;
+
+  /**
+   * Chọn ví Ganache khác cho user hiện tại
+   * Lưu lên MongoDB + AsyncStorage
+   */
+  selectWallet: (address: string) => Promise<void>;
 
   // Utils
   getProvider: () => ethers.providers.JsonRpcProvider | null;
@@ -309,48 +319,41 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
 
   /**
    * Load session đã lưu khi app khởi động
-   * Nếu không có session → tự động kết nối Ganache Account #0 cho demo
+   *
+   * Ưu tiên:
+   * 1. user.walletAddress từ MongoDB (qua Redux store)
+   * 2. AsyncStorage (session cũ)
+   * 3. GANACHE_ACCOUNTS[0] (default fallback)
    */
   useEffect(() => {
-    const GANACHE_DEMO_ADDRESS = '0x0BA0aF86A2D23e59D002c7084F77F4E4049F5D6C';
-
     const loadSavedSession = async () => {
       try {
-        // Đọc từ AsyncStorage
+        let targetAddress: string | null = null;
+
+        // Bước 1: Đọc từ AsyncStorage trước
         const savedData = await AsyncStorage.getItem(STORAGE_KEY);
-
-        let targetAddress: string;
-
         if (savedData) {
-          // Parse JSON
-          const { address } = JSON.parse(savedData);
-
-          // Validate và normalize address
           try {
+            const { address } = JSON.parse(savedData);
             targetAddress = ethers.utils.getAddress(address);
-            
-            // Kiểm tra nếu address cũ không còn balance (Ganache restart)
-            // → chuyển sang demo address mới
-            if (targetAddress !== GANACHE_DEMO_ADDRESS) {
-              const checkBalance = await fetchBalances(targetAddress);
-              if (checkBalance.eth === '0' || parseFloat(checkBalance.eth) === 0) {
-                console.log('⚠️ Saved address has 0 balance, switching to demo address');
-                await AsyncStorage.removeItem(STORAGE_KEY);
-                targetAddress = GANACHE_DEMO_ADDRESS;
-              }
-            }
           } catch {
-            // Address không hợp lệ, dùng demo address
             await AsyncStorage.removeItem(STORAGE_KEY);
-            targetAddress = GANACHE_DEMO_ADDRESS;
           }
-        } else {
-          // Không có session → Auto-connect Ganache demo account
-          console.log('📱 Auto-connect Ganache demo wallet:', GANACHE_DEMO_ADDRESS);
-          targetAddress = GANACHE_DEMO_ADDRESS;
         }
 
-        // Cập nhật state
+        // Bước 2: Nếu không có session → dùng GANACHE_ACCOUNTS[0] làm default
+        if (!targetAddress) {
+          targetAddress = GANACHE_ACCOUNTS[0].address;
+          console.log('📱 Auto-connect Ganache Account #0:', targetAddress);
+        }
+
+        // Bước 3: Kiểm tra balance (Ganache có chạy không?)
+        const balanceCheck = await fetchBalances(targetAddress);
+        if (balanceCheck.eth === '0' && balanceCheck.usdt === '0') {
+          console.warn('⚠️ Address có balance = 0. Kiểm tra Ganache và adb reverse tcp:7545 tcp:7545');
+        }
+
+        // Cập nhật state kết nối
         setConnection({
           address: targetAddress,
           chainId: CURRENT_CHAIN.id,
@@ -358,27 +361,77 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
           isConnecting: false,
         });
 
-        // Fetch số dư
-        console.log('🔄 Fetching balances for:', targetAddress);
-        const balanceData = await fetchBalances(targetAddress);
-        console.log('💰 Balances:', balanceData);
         setBalances({
-          eth: balanceData.eth,
-          usdt: balanceData.usdt,
+          eth: balanceCheck.eth,
+          usdt: balanceCheck.usdt,
           isLoading: false,
         });
 
-        // Lưu session để lần sau không cần auto-connect
+        // Lưu session
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({
           address: targetAddress,
           chainId: CURRENT_CHAIN.id,
         }));
+
+        console.log('💰 Balances loaded:', balanceCheck, 'for', targetAddress);
       } catch (err) {
         console.error('Error loading saved session:', err);
       }
     };
 
     loadSavedSession();
+  }, [fetchBalances]);
+
+  // =====================
+  // SELECT WALLET (mới)
+  // =====================
+
+  /**
+   * User chọn 1 trong 5 Ganache accounts
+   * Lưu vào:
+   * 1. AsyncStorage (local)
+   * 2. MongoDB qua API PUT /auth/me (dùng cho FundLoan đế biết borrower wallet)
+   */
+  const selectWallet = useCallback(async (address: string) => {
+    try {
+      // Validate địa chỉ
+      const normalizedAddress = ethers.utils.getAddress(address);
+
+      // Lấy balance mới
+      const balanceData = await fetchBalances(normalizedAddress);
+
+      // Cập nhật connection state
+      setConnection({
+        address: normalizedAddress,
+        chainId: CURRENT_CHAIN.id,
+        isConnected: true,
+        isConnecting: false,
+      });
+
+      setBalances({
+        eth: balanceData.eth,
+        usdt: balanceData.usdt,
+        isLoading: false,
+      });
+
+      // Lưu vào AsyncStorage
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({
+        address: normalizedAddress,
+        chainId: CURRENT_CHAIN.id,
+      }));
+
+      // Đẩy lên MongoDB — bất đồng bộ, không block UI
+      try {
+        await authApi.updateWallet(normalizedAddress);
+        console.log('✅ Wallet saved to MongoDB:', normalizedAddress);
+      } catch (apiErr) {
+        console.warn('⚠️ Cannot save wallet to backend (offline?):', apiErr);
+      }
+
+      console.log('🔄 Switched wallet to:', normalizedAddress);
+    } catch (err: any) {
+      toast.error('Địa chỉ ví không hợp lệ', 'Lỗi');
+    }
   }, [fetchBalances]);
 
   // =====================
@@ -560,13 +613,13 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
     tx: ethers.providers.TransactionRequest
   ): Promise<string | null> => {
     if (!connection.isConnected || !connection.address) {
-      Alert.alert('⚠️ Lỗi', 'Vui lòng kết nối ví trước khi giao dịch');
+      toast.error('Vui lòng kết nối ví trước khi giao dịch', 'Lỗi');
       return null;
     }
 
     try {
       if (!tx.to) {
-        Alert.alert('⚠️ Lỗi', 'Địa chỉ đích không hợp lệ');
+        toast.error('Địa chỉ đích không hợp lệ', 'Lỗi');
         return null;
       }
 
@@ -577,7 +630,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
 
       const signer = getSigner();
       if (!signer) {
-        Alert.alert('⚠️ Lỗi', 'Không thể kết nối blockchain. Kiểm tra Ganache.');
+        toast.error('Không thể kết nối blockchain. Kiểm tra Ganache.', 'Lỗi');
         return null;
       }
 
@@ -605,9 +658,9 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
     } catch (err: any) {
       console.error('Transaction failed:', err);
       if (err.code === 'INSUFFICIENT_FUNDS') {
-        Alert.alert('❌ Không đủ ETH', 'Số dư ETH không đủ để trả gas fee.');
+        toast.error('Số dư ETH không đủ để trả gas fee.', 'Không đủ ETH');
       } else {
-        Alert.alert('❌ Giao dịch thất bại', err.reason || err.message || 'Vui lòng thử lại');
+        toast.error(err.reason || err.message || 'Vui lòng thử lại', 'Giao dịch thất bại');
       }
       return null;
     }
@@ -625,7 +678,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
     amount: string
   ): Promise<string | null> => {
     if (!connection.isConnected || !connection.address) {
-      Alert.alert('⚠️ Lỗi', 'Vui lòng kết nối ví trước khi giao dịch');
+      toast.error('Vui lòng kết nối ví trước khi giao dịch', 'Lỗi');
       return null;
     }
 
@@ -637,7 +690,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
 
       const signer = getSigner();
       if (!signer) {
-        Alert.alert('⚠️ Lỗi', 'Không thể kết nối blockchain');
+        toast.error('Không thể kết nối blockchain', 'Lỗi');
         return null;
       }
 
@@ -685,7 +738,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
       return txResponse.hash;
     } catch (err: any) {
       console.error('USDT transfer failed:', err);
-      Alert.alert('❌ Chuyển USDT thất bại', err.reason || err.message || 'Vui lòng thử lại');
+      toast.error(err.reason || err.message || 'Vui lòng thử lại', 'Chuyển USDT thất bại');
       return null;
     }
   }, [connection, getSigner, refreshBalances]);
@@ -702,7 +755,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
    */
   const signMessage = useCallback(async (message: string): Promise<string | null> => {
     if (!connection.isConnected || !connection.address) {
-      Alert.alert('⚠️ Lỗi', 'Vui lòng kết nối ví trước khi ký');
+      toast.error('Vui lòng kết nối ví trước khi ký', 'Lỗi');
       return null;
     }
 
@@ -735,7 +788,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
       return mockSignature;
     } catch (err: any) {
       console.error('Signing failed:', err);
-      Alert.alert('❌ Ký thất bại', err.message || 'Vui lòng thử lại');
+      toast.error(err.message || 'Vui lòng thử lại', 'Ký thất bại');
       return null;
     }
   }, [connection]);
@@ -787,6 +840,7 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
     connect,
     disconnect,
     refreshBalances,
+    selectWallet,
 
     // Utils
     getProvider,

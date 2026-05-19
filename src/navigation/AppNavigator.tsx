@@ -25,6 +25,7 @@ import {
 } from '../screens/loans';
 import { ProfileScreen, PersonalInfoScreen, SecurityScreen, ChangePasswordScreen } from '../screens/profile';
 import { WalletScreen, TransactionHistoryScreen } from '../screens/wallet';
+import WalletSelectScreen from '../screens/wallet/WalletSelectScreen';
 import {
   LinkBankScreen,
   BankConnectionsScreen,
@@ -237,6 +238,7 @@ const AppNavigator: React.FC = () => {
             
             {/* Wallet Screens */}
             <Stack.Screen name="TransactionHistory" component={TransactionHistoryScreen} />
+            <Stack.Screen name="WalletSelect" component={WalletSelectScreen} />
 
             {/* Profile Screens */}
             <Stack.Screen name="PersonalInfo" component={PersonalInfoScreen} />

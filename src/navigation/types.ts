@@ -29,6 +29,9 @@ export type RootStackParamList = {
   TransactionHistory: undefined;
   Notifications: undefined;
 
+  // Wallet Selection (Ganache demo)
+  WalletSelect: undefined;
+
   // Loans
   BrowseLoans: undefined;
   CreateLoan: undefined;

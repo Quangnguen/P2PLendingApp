@@ -64,6 +64,17 @@ export const authApi = {
     const response = await apiClient.put<ApiResponse<null>>('/auth/change-password', data);
     return { message: response.data.message };
   },
+
+  /**
+   * Cập nhật địa chỉ ví Ganache cho user hiện tại
+   * Gọi PUT /auth/me/wallet (endpoint riêng, không cần fullName/avatarUrl)
+   */
+  updateWallet: async (walletAddress: string): Promise<{ walletAddress: string }> => {
+    const response = await apiClient.put<ApiResponse<any>>('/auth/me/wallet', {
+      walletAddress,
+    });
+    return response.data.data;
+  },
 };
 
 export default authApi;

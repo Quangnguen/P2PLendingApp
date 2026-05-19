@@ -13,8 +13,13 @@ import {
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { useWeb3 } from '../../providers';
+import { GANACHE_ACCOUNTS } from '@/config/walletconnect';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
+import { useToast } from '@/store';
 
 const WalletScreen: React.FC = () => {
+  const navigation = useNavigation<NativeStackNavigationProp<any>>();
   // Sử dụng hook mới
   const {
     connection,
@@ -26,6 +31,7 @@ const WalletScreen: React.FC = () => {
     formatAddress,
     formatBalance,
   } = useWeb3();
+  const toast = useToast();
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -40,7 +46,7 @@ const WalletScreen: React.FC = () => {
   const handleCopyAddress = () => {
     if (connection.address) {
       Clipboard.setString(connection.address);
-      Alert.alert('✅ Đã sao chép', 'Địa chỉ ví đã được sao chép');
+      toast.success('Địa chỉ ví đã được sao chép', 'Đã sao chép');
     }
   };
 
@@ -213,6 +219,31 @@ const WalletScreen: React.FC = () => {
           <Text>🦊 MetaMask</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Switch Wallet (Ganache Demo) */}
+      {(() => {
+        const currentAccount = GANACHE_ACCOUNTS.find(
+          a => a.address.toLowerCase() === connection.address?.toLowerCase()
+        );
+        return (
+          <TouchableOpacity
+            style={styles.switchWalletButton}
+            onPress={() => navigation.navigate('WalletSelect')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.switchWalletEmoji}>
+              {currentAccount?.emoji || '👛'}
+            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.switchWalletLabel}>
+                {currentAccount?.label || 'Ví Ganache'}
+              </Text>
+              <Text style={styles.switchWalletSub}>Nhấn để đổi sang ví khác</Text>
+            </View>
+            <Text style={{ color: '#6b8bb5', fontSize: 20 }}>›</Text>
+          </TouchableOpacity>
+        );
+      })()}
 
       {/* Disconnect */}
       <TouchableOpacity style={styles.disconnectButton} onPress={handleDisconnect}>
@@ -414,6 +445,21 @@ const styles = StyleSheet.create({
   disconnectText: {
     color: '#e74c3c',
   },
+  switchWalletButton: {
+    backgroundColor: '#1a2a3a',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 16,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#2a4a6a',
+  },
+  switchWalletEmoji: { fontSize: 26 },
+  switchWalletLabel: { color: '#fff', fontWeight: '600', fontSize: 14, marginBottom: 2 },
+  switchWalletSub: { color: '#6b8bb5', fontSize: 12 },
 });
 
 export default WalletScreen;

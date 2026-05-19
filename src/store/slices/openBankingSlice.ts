@@ -101,6 +101,14 @@ export const verifyOtpLink = createAsyncThunk(
   }
 );
 
+// 4a-pre. Xóa cache open banking (gọi khi login user mới để tránh thấy data user cũ)
+export const clearConnectionsCache = createAsyncThunk(
+  'openBanking/clearConnectionsCache',
+  async () => {
+    await AsyncStorage.removeItem(CONNECTIONS_STORAGE_KEY);
+  }
+);
+
 // 4a. Khôi phục connections từ AsyncStorage khi app khởi động (không gọi API)
 export const hydrateConnectionsFromCache = createAsyncThunk(
   'openBanking/hydrateConnectionsFromCache',
@@ -434,3 +442,4 @@ const openBankingSlice = createSlice({
 
 export const { clearError, resetLinkState, clearQRData, resetOpenBanking } = openBankingSlice.actions;
 export default openBankingSlice.reducer;
+export { CONNECTIONS_STORAGE_KEY };

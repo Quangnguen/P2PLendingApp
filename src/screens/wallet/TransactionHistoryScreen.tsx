@@ -17,55 +17,57 @@ type TransactionHistoryScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'TransactionHistory'>;
 };
 
-// Mock data for transactions
-const MOCK_TRANSACTIONS = [
-  {
-    id: 'tx1',
-    type: 'FUND_LOAN',
-    token: 'USDT',
-    amount: '1000',
-    status: 'COMPLETED',
-    date: Date.now() - 1000 * 60 * 30, // 30 minutes ago
-    title: 'Cấp vốn khoản vay',
-    hash: '0x123...abc',
-  },
-  {
-    id: 'tx2',
-    type: 'CREATE_LOAN',
-    token: 'ETH',
-    amount: '1.2',
-    status: 'COMPLETED',
-    date: Date.now() - 1000 * 60 * 60 * 2, // 2 hours ago
-    title: 'Khóa ETH thế chấp',
-    hash: '0x456...def',
-  },
-  {
-    id: 'tx3',
-    type: 'REPAY_LOAN',
-    token: 'USDT',
-    amount: '550',
-    status: 'COMPLETED',
-    date: Date.now() - 1000 * 60 * 60 * 24, // 1 day ago
-    title: 'Trả nợ khoản vay',
-    hash: '0x789...ghi',
-  },
-  {
-    id: 'tx4',
-    type: 'RECEIVE_USDT',
-    token: 'USDT',
-    amount: '2000',
-    status: 'COMPLETED',
-    date: Date.now() - 1000 * 60 * 60 * 48, // 2 days ago
-    title: 'Nhận USDT từ ví khác',
-    hash: '0xabc...123',
-  },
-];
-
 const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({ navigation }) => {
   const { colors } = useTheme();
   const [filter, setFilter] = useState('ALL'); // ALL, ETH, USDT
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredTransactions = MOCK_TRANSACTIONS.filter(
+  // Helper to safely parse MongoDB Decimal128 values
+  const toNum = (val: any): number => {
+    if (val == null) return 0;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return parseFloat(val) || 0;
+    if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+    return parseFloat(String(val)) || 0;
+  };
+
+  React.useEffect(() => {
+    const fetchTransactions = async () => {
+      try {
+        const { loanApi } = await import('@/api/loan.api');
+        const res = await loanApi.getMyTransactions();
+        const txData = res?.data || res || [];
+        if (Array.isArray(txData)) {
+          // Map backend transaction format to screen format
+          const mappedTxs = txData.map(tx => {
+            const isPayment = tx.type === 'PAYMENT';
+            // Simple heuristic to detect if it's funding (USDT) or repayment (USDT/ETH depending on logic)
+            // Currently all amounts are USDT since it's principal/repayment
+            return {
+              id: tx._id,
+              type: isPayment ? 'PAYMENT' : 'RECEIPT',
+              token: 'USDT', // Assuming USDT for funding and repayment
+              amount: toNum(tx.amount).toString(),
+              status: tx.status,
+              date: new Date(tx.date).getTime(),
+              title: isPayment ? 'Thanh toán khoản vay' : 'Nhận tiền giải ngân/trả nợ',
+              hash: tx.txHash || '',
+              loanId: tx.loanInfo?._id,
+            };
+          });
+          setTransactions(mappedTxs);
+        }
+      } catch (err) {
+        console.error('Error fetching transactions:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTransactions();
+  }, []);
+
+  const filteredTransactions = transactions.filter(
     tx => filter === 'ALL' || tx.token === filter
   );
 
@@ -91,25 +93,26 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({ nav
 
   const getAmountPrefix = (type: string) => {
     switch (type) {
-      case 'FUND_LOAN': return '-';
-      case 'CREATE_LOAN': return '-';
-      case 'REPAY_LOAN': return '-';
-      case 'RECEIVE_USDT': return '+';
+      case 'PAYMENT': return '-';
+      case 'RECEIPT': return '+';
       default: return '';
     }
   };
 
   const renderTransaction = ({ item }: { item: any }) => {
-    const isNegative = ['FUND_LOAN', 'CREATE_LOAN', 'REPAY_LOAN'].includes(item.type);
+    const isNegative = item.type === 'PAYMENT';
     const amountColor = isNegative ? colors.redError : colors.greenSuccess;
 
     return (
-      <View style={[styles.txCard, { backgroundColor: colors.darkSurface }]}>
+      <TouchableOpacity 
+        style={[styles.txCard, { backgroundColor: colors.darkSurface }]}
+        onPress={() => item.loanId && navigation.navigate('LoanDetail', { loanId: item.loanId })}
+      >
         <View style={styles.txLeft}>
-          <Ionicons name={getIconName(item.type)} size={36} color={getIconColor(item.type)} />
+          <Ionicons name={isNegative ? 'arrow-up-circle' : 'arrow-down-circle'} size={36} color={amountColor} />
           <View style={styles.txInfo}>
-            <Text style={[styles.txTitle, { color: colors.textWhite }]}>{item.title}</Text>
-            <Text style={[styles.txDate, { color: colors.textGray }]}>
+            <Text style={[styles.txTitle, { color: colors.textWhite }]} numberOfLines={1}>{item.title}</Text>
+            <Text style={[styles.txDate, { color: colors.textGray }]} numberOfLines={1}>
               {new Date(item.date).toLocaleString('vi-VN')}
             </Text>
           </View>
@@ -118,11 +121,11 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({ nav
           <Text style={[styles.txAmount, { color: amountColor }]}>
             {getAmountPrefix(item.type)}{Number(item.amount).toLocaleString('en-US')} {item.token}
           </Text>
-          <Text style={[styles.txStatus, { color: colors.greenSuccess }]}>
-            Thành công
+          <Text style={[styles.txStatus, { color: item.status === 'COMPLETED' ? colors.greenSuccess : colors.yellowWarning }]}>
+            {item.status === 'COMPLETED' ? 'Thành công' : 'Đang xử lý'}
           </Text>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -226,6 +229,7 @@ const styles = StyleSheet.create({
   },
   txInfo: {
     marginLeft: 12,
+    flex: 1,
   },
   txTitle: {
     fontSize: 16,
@@ -237,6 +241,7 @@ const styles = StyleSheet.create({
   },
   txRight: {
     alignItems: 'flex-end',
+    marginLeft: 12,
   },
   txAmount: {
     fontSize: 16,

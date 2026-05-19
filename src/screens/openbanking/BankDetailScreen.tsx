@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp, useRoute } from '@react-navigation/native';
 import { Card, Button, Loading } from '@/components/common';
-import { useAppSelector, useAppDispatch } from '@/store';
+import { useAppSelector, useAppDispatch, useToast } from '@/store';
 import { unlinkConnection } from '@/store/slices/openBankingSlice';
 import { useTheme } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
@@ -21,6 +21,7 @@ const BankDetailScreen = ({ navigation }: { navigation: any }) => {
     const { colors } = useTheme();
     const route = useRoute<BankDetailScreenRouteProp>();
     const dispatch = useAppDispatch();
+    const toast = useToast();
     const { connectionId } = route.params;
 
     // Lấy info account từ Redux Store (đã load ở màn trước)
@@ -87,13 +88,10 @@ const BankDetailScreen = ({ navigation }: { navigation: any }) => {
                         setUnlinking(true);
                         try {
                             await dispatch(unlinkConnection(connectionId)).unwrap();
-                            Alert.alert(
-                                '✅ Thành công',
-                                'Đã gỡ liên kết ngân hàng thành công.',
-                                [{ text: 'OK', onPress: () => navigation.goBack() }],
-                            );
+                            toast.success('Đã gỡ liên kết ngân hàng thành công.', 'Thành công');
+                            navigation.goBack();
                         } catch (error: any) {
-                            Alert.alert('❌ Lỗi', error || 'Không thể gỡ liên kết. Vui lòng thử lại.');
+                            toast.error(error || 'Không thể gỡ liên kết. Vui lòng thử lại.', 'Lỗi');
                         } finally {
                             setUnlinking(false);
                         }

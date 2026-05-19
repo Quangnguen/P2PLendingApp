@@ -34,7 +34,9 @@ import {
   formatCurrency,
 } from '@/utils/loanCalculations';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { useAuth, useOpenBanking } from '@/store';
+import { useAuth, useOpenBanking, useToast } from '@/store';
+
+import { ethers } from 'ethers';
 
 type FundLoanScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'FundLoan'>;
@@ -43,15 +45,18 @@ type FundLoanScreenProps = {
 
 const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
-  const { balances, connection, sendUSDT, refreshBalances } = useWeb3();
+  const { balances, connection, sendUSDT, sendTransaction, refreshBalances } = useWeb3();
   const { user } = useAuth();
   const { connections } = useOpenBanking();
+  const toast = useToast();
   const { requestId } = route.params;
   const [isLoading, setIsLoading] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loanRequest, setLoanRequest] = useState<any>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [fundingStep, setFundingStep] = useState('');
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [successData, setSuccessData] = useState<{txHash: string} | null>(null);
 
   // Helper: Safely convert MongoDB Decimal128 to number
   const toNum = (val: any): number => {
@@ -73,8 +78,7 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
         // Tính collateral ratio thực tế
         const loanAmount = toNum(reqData.loanAmount);
         const collateral = toNum(reqData.collateralAmount);
-        // collateralRatio = (collateral * ethPrice / loanAmount) * 100
-        // Tạm dùng giá ETH mặc định 2500 USDT
+        // Dùng giá ETH thống nhất 2500 USDT (khớp với CreateLoanScreen)
         const ethPrice = 2500;
         const collateralValueUSDT = collateral * ethPrice;
         const actualCollateralRatio = loanAmount > 0
@@ -83,6 +87,7 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
 
         setLoanRequest({
           id: requestId,
+          onChainRequestId: reqData.onChainRequestId,
           borrowerAlias: reqData.borrowerId?.fullName || `Borrower #${requestId.slice(-4)}`,
           borrowerWallet: reqData.borrowerId?.walletAddress || null,
           amount: String(loanAmount),
@@ -99,7 +104,7 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
         });
       } catch (err) {
         console.error('Error fetching request:', err);
-        Alert.alert('❌ Lỗi', 'Không thể tải thông tin khoản vay.');
+        toast.error('Không thể tải thông tin khoản vay.');
         navigation.goBack();
       } finally {
         setLoadingData(false);
@@ -157,36 +162,96 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
   const handleFund = async () => {
     setIsLoading(true);
     try {
-      // Bước 1: Chuyển USDT on-chain (thật)
-      setFundingStep('Đang chuyển USDT trên blockchain...');
-      
-      // Địa chỉ nhận: P2P Lending contract hoặc borrower wallet
-      const recipientAddress = CONTRACT_ADDRESSES.P2P_LENDING;
-      const txHash = await sendUSDT(recipientAddress, loanRequest.amount);
-      
+      if (!loanRequest.borrowerWallet) {
+        toast.warning('Người vay chưa liên kết ví Ganache.', 'Không thể cấp vốn');
+        setIsLoading(false);
+        return;
+      }
+
+      // Kiểm tra tự cấp vốn (chỉ chặn khi cùng ví blockchain)
+      // Tắm bỏ check này để hỗ trợ demo single-user dùng nhiều ví Ganache khác nhau
+      // if (connection.address?.toLowerCase() === loanRequest.borrowerWallet?.toLowerCase()) {
+      //   toast.error('Bạn không thể cấp vốn cho chính mình.', 'Không hợp lệ');
+      //   setIsLoading(false);
+      //   return;
+      // }
+
+      let txHash = null;
+
+      if (loanRequest.onChainRequestId !== undefined && loanRequest.onChainRequestId !== null) {
+        // 1. PRE-FLIGHT: Verify request actually exists on-chain
+        const provider = new ethers.providers.StaticJsonRpcProvider(
+          'http://localhost:7545', { chainId: 1337, name: 'ganache' }
+        );
+        const p2pReadInterface = new ethers.utils.Interface([
+          'function requestActive(uint256) view returns (bool)',
+          'function requestBorrower(uint256) view returns (address)',
+        ]);
+        const p2pContract = new ethers.Contract(CONTRACT_ADDRESSES.P2P_LENDING, p2pReadInterface, provider);
+        const isActive = await p2pContract.requestActive(loanRequest.onChainRequestId);
+        if (!isActive) {
+          toast.error(
+            `Request #${loanRequest.onChainRequestId} không tồn tại hoặc đã bị hủy trên hợp đồng hiện tại.\n\nVui lòng tạo yêu cầu vay mới sau khi deploy lại hệ thống.`,
+            'Lỗi On-Chain'
+          );
+          setIsLoading(false);
+          setFundingStep('');
+          return;
+        }
+
+        // 2. Approve USDT cho P2PLending contract
+        setFundingStep('Đang ủy quyền chuyển USDT cho Smart Contract...');
+        const usdtInterface = new ethers.utils.Interface(['function approve(address spender, uint256 amount) returns (bool)']);
+        const approveData = usdtInterface.encodeFunctionData('approve', [
+          CONTRACT_ADDRESSES.P2P_LENDING,
+          ethers.utils.parseUnits(loanRequest.amount, 6)
+        ]);
+        
+        const approveTx = await sendTransaction({
+          to: CONTRACT_ADDRESSES.USDT,
+          data: approveData
+        });
+
+        if (!approveTx) {
+          setIsLoading(false);
+          setFundingStep('');
+          return;
+        }
+
+        // 3. Gọi fundLoanRequest trên P2PLending contract
+        setFundingStep('Đang tạo hợp đồng vay trên blockchain...');
+        const p2pInterface = new ethers.utils.Interface(['function fundLoanRequest(uint256 requestId) returns (address)']);
+        const fundData = p2pInterface.encodeFunctionData('fundLoanRequest', [loanRequest.onChainRequestId]);
+        
+        txHash = await sendTransaction({
+          to: CONTRACT_ADDRESSES.P2P_LENDING,
+          data: fundData,
+          gasLimit: 2000000 // cần ~1.2M gas để deploy Loan contract + authorize CollateralManager
+        });
+      } else {
+        // LUỒNG CŨ (Chỉ chuyển USDT ngang hàng)
+        setFundingStep('Đang chuyển USDT đến người vay...');
+        txHash = await sendUSDT(loanRequest.borrowerWallet, loanRequest.amount);
+      }
+
       if (!txHash) {
-        // sendUSDT đã hiện alert lỗi rồi
         setIsLoading(false);
         setFundingStep('');
         return;
       }
 
-      // Bước 2: Gọi API backend để ghi nhận khoản đầu tư
+      // Bước 3: Thông báo backend ghi nhận
       setFundingStep('Đang ghi nhận trên hệ thống...');
       const { loanApi } = await import('@/api/loan.api');
       await loanApi.fundLoan(requestId, { txHash });
 
-      // Bước 3: Refresh balances
       await refreshBalances();
 
-      Alert.alert(
-        '✅ Cấp vốn thành công',
-        `Bạn đã cấp vốn ${formatCurrency(loanRequest.amount)} USDT.\nLợi nhuận dự kiến: ${formatCurrency(profit)} USDT.\n\nTX: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
+      setSuccessData({ txHash });
+      setShowSuccess(true);
     } catch (error: any) {
       const msg = error?.response?.data?.message || error.message || 'Không thể cấp vốn. Vui lòng thử lại.';
-      Alert.alert('❌ Lỗi', msg);
+      toast.error(msg, 'Cấp vốn thất bại');
     } finally {
       setIsLoading(false);
       setShowConfirm(false);
@@ -350,7 +415,7 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
             </View>
             <View style={styles.riskRow}>
               <Text style={[styles.riskLabel, { color: colors.textGray }]}>Ngưỡng thanh lý</Text>
-              <Text style={[styles.riskValue, { color: colors.yellowWarning }]}>120%</Text>
+              <Text style={[styles.riskValue, { color: colors.yellowWarning }]}>110%</Text>
             </View>
           </View>
         </Card>
@@ -499,6 +564,51 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
           </View>
         </View>
       )}
+
+      {/* Success Modal */}
+      {showSuccess && successData && (
+        <View style={styles.modalOverlay}>
+          <View style={[styles.successModalContent, { backgroundColor: colors.darkSurface }]}>
+            <View style={styles.successIconWrapper}>
+              <View style={[styles.successIconBg, { backgroundColor: colors.greenSuccess + '20' }]}>
+                <Ionicons name="checkmark-circle" size={80} color={colors.greenSuccess} />
+              </View>
+            </View>
+            
+            <Text style={[styles.successTitle, { color: colors.textWhite }]}>
+              Cấp Vốn Thành Công!
+            </Text>
+            
+            <Text style={[styles.successSubtitle, { color: colors.textGray }]}>
+              Bạn đã chuyển thành công <Text style={{color: colors.textWhite, fontWeight: 'bold'}}>{formatCurrency(loanRequest.amount)} USDT</Text> đến ví của người vay.
+            </Text>
+
+            <View style={[styles.successInfoBox, { backgroundColor: colors.darkBackground }]}>
+              <View style={styles.successInfoRow}>
+                <Text style={styles.successInfoLabel}>Lợi nhuận dự kiến:</Text>
+                <Text style={[styles.successInfoValue, { color: colors.greenSuccess }]}>+{formatCurrency(profit)} USDT</Text>
+              </View>
+              <View style={[styles.modalDivider, { backgroundColor: colors.darkBorder, marginVertical: 8 }]} />
+              <View style={styles.successInfoRow}>
+                <Text style={styles.successInfoLabel}>Mã giao dịch:</Text>
+                <Text style={[styles.successInfoValue, { color: colors.accentBlue, fontSize: 12 }]} numberOfLines={1} ellipsizeMode="middle">
+                  {successData.txHash}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.successButton, { backgroundColor: colors.greenSuccess }]}
+              onPress={() => {
+                setShowSuccess(false);
+                navigation.goBack();
+              }}
+            >
+              <Text style={styles.successButtonText}>Hoàn tất</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -644,6 +754,19 @@ const styles = StyleSheet.create({
   modalCancelText: { fontSize: 15, fontWeight: '500' },
   modalConfirmBtn: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 12 },
   modalConfirmText: { fontSize: 15, color: '#fff', fontWeight: '600' },
+
+  // Success Modal
+  successModalContent: { borderRadius: 24, padding: 24, width: '90%', maxWidth: 400, alignItems: 'center', elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20 },
+  successIconWrapper: { marginBottom: 20 },
+  successIconBg: { width: 120, height: 120, borderRadius: 60, justifyContent: 'center', alignItems: 'center' },
+  successTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' },
+  successSubtitle: { fontSize: 15, lineHeight: 22, textAlign: 'center', marginBottom: 24, paddingHorizontal: 10 },
+  successInfoBox: { width: '100%', padding: 16, borderRadius: 16, marginBottom: 24 },
+  successInfoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  successInfoLabel: { fontSize: 14, color: '#888' },
+  successInfoValue: { fontSize: 15, fontWeight: 'bold', flexShrink: 1, textAlign: 'right', marginLeft: 10 },
+  successButton: { width: '100%', paddingVertical: 16, borderRadius: 16, alignItems: 'center', elevation: 2 },
+  successButtonText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
 });
 
 export default FundLoanScreen;

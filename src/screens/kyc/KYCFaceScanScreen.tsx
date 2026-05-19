@@ -16,6 +16,7 @@ import { RouteProp } from '@react-navigation/native';
 import { launchCamera, Asset } from 'react-native-image-picker';
 import { kycApi } from '../../api/kyc.api';
 import { Alert, ActivityIndicator, Image } from 'react-native';
+import { useToast } from '@/store';
 
 type KYCFaceScanScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'KYCFaceScan'>;
@@ -28,6 +29,7 @@ const CIRCLE_SIZE = SCREEN_WIDTH * 0.7;
 const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
   const { frontImageUri } = route.params;
+  const toast = useToast();
 
   const [capturedSelfie, setCapturedSelfie] = useState<Asset | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -48,7 +50,7 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation, route
 
       if (result.didCancel) return;
       if (result.errorCode) {
-        Alert.alert('Lỗi', result.errorMessage || 'Không thể mở camera');
+        toast.error(result.errorMessage || 'Không thể mở camera', 'Lỗi');
         return;
       }
 
@@ -58,7 +60,7 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation, route
         await performFaceMatch(asset.uri!);
       }
     } catch (error) {
-      Alert.alert('Lỗi', 'Không thể truy cập camera');
+      toast.error('Không thể truy cập camera', 'Lỗi');
     }
   };
 
@@ -95,7 +97,7 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation, route
         setInstruction('Thử lại: Đưa khuôn mặt vào khung hình');
       }
     } catch (error: any) {
-      Alert.alert('Lỗi', error.response?.data?.message || 'Có lỗi xảy ra khi xác thực');
+      toast.error(error.response?.data?.message || 'Có lỗi xảy ra khi xác thực', 'Lỗi');
       setCapturedSelfie(null);
       setProgress(0);
     } finally {
