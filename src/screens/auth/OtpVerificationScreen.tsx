@@ -13,6 +13,7 @@ import { Button } from '../../components/common';
 import { useAppDispatch, useAuth, verifyOtp, clearAuthError, useToast } from '../../store';
 import { useTheme } from '../../providers';
 import { RootStackParamList } from '../../navigation/types';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 type OtpVerificationScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'OtpVerification'>;
@@ -87,12 +88,12 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps> = ({
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Text style={[styles.backButtonText, { color: colors.accentBlue }]}>← Quay lại</Text>
+          <Ionicons name="arrow-back" size={24} color={colors.accentBlue} />
         </TouchableOpacity>
 
         <View style={styles.header}>
           <View style={[styles.iconContainer, { backgroundColor: colors.accentBlue + '33' }]}>
-            <Text style={styles.icon}>📧</Text>
+            <Ionicons name="mail-outline" size={40} color={colors.accentBlue} />
           </View>
           <Text style={[styles.title, { color: colors.textWhite }]}>Xác thực OTP</Text>
           <Text style={[styles.subtitle, { color: colors.textGray }]}>
@@ -186,9 +187,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  icon: {
-    fontSize: 36,
-  },
+
   title: {
     fontSize: 28,
     fontWeight: 'bold',

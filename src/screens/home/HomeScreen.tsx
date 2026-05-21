@@ -188,7 +188,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               <Text style={{ fontSize: 24 }}>{user?.fullName?.charAt(0)?.toUpperCase() || 'U'}</Text>
             </View>
             <View>
-              <Text style={[styles.greeting, { color: colors.textGray }]}>Chào buổi sáng 👋</Text>
+              <View style={styles.greetingRow}>
+                <Text style={[styles.greeting, { color: colors.textGray }]}>Chào buổi sáng </Text>
+                <Ionicons name="hand-left-outline" size={14} color={colors.textGray} />
+              </View>
               <Text style={[styles.userName, { color: colors.textWhite }]}>{user?.fullName || 'Người dùng'}</Text>
             </View>
           </View>
@@ -318,7 +321,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           <Card style={{ ...styles.linkBankCard, backgroundColor: colors.accentBlue + '15', borderColor: colors.accentBlue }}>
             <View style={styles.linkBankContent}>
               <View style={[styles.linkBankIcon, { backgroundColor: colors.accentBlue + '30' }]}>
-                <Text style={styles.linkBankIconText}>🏦</Text>
+                <Ionicons name="business" size={24} color={colors.accentBlue} />
               </View>
               <View style={styles.linkBankText}>
                 <Text style={[styles.linkBankTitle, { color: colors.textWhite }]}>Liên kết ngân hàng</Text>
@@ -437,8 +440,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           {!recentTransactions || recentTransactions.length === 0 ? (
             <Card style={styles.transactionCard}>
               <View style={styles.emptyTransactions}>
-                <Text style={styles.emptyIcon}>📝</Text>
-                <Text style={[styles.emptyText, { color: colors.textGray }]}>Chưa có giao dịch nào</Text>
+                <Ionicons name="document-text-outline" size={48} color={colors.textGray} />
+                <Text style={[styles.emptyText, { color: colors.textGray, marginTop: 10 }]}>Chưa có giao dịch nào</Text>
               </View>
             </Card>
           ) : (
@@ -519,6 +522,10 @@ const styles = StyleSheet.create({
   },
   greeting: {
     fontSize: 14,
+  },
+  greetingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
   },
   headerIcons: {
@@ -661,9 +668,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  linkBankIconText: {
-    fontSize: 24,
-  },
+
   linkBankText: {
     flex: 1,
   },
@@ -803,10 +808,6 @@ const styles = StyleSheet.create({
   emptyTransactions: {
     alignItems: 'center',
     paddingVertical: 32,
-  },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 12,
   },
   emptyText: {
     fontSize: 14,

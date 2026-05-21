@@ -1,5 +1,6 @@
 // src/screens/wallet/WalletScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -34,6 +35,14 @@ const WalletScreen: React.FC = () => {
   const toast = useToast();
 
   const [refreshing, setRefreshing] = useState(false);
+
+  // Tự động refresh balance mỗi lần vào tab Ví
+  // (Quan trọng: sau khi repay, ETH đã về on-chain nhưng app cần refresh để hiển thị)
+  useFocusEffect(
+    useCallback(() => {
+      refreshBalances();
+    }, [refreshBalances])
+  );
 
   // Lấy network name
   const getNetworkName = () => {

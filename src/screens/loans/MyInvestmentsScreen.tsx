@@ -331,9 +331,11 @@ const MyInvestmentsScreen: React.FC<MyInvestmentsScreenProps> = ({ navigation })
         />
       ) : (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>
-            {activeTab === 'active' ? '📊' : activeTab === 'completed' ? '✅' : '⚠️'}
-          </Text>
+          <Ionicons
+            name={activeTab === 'active' ? 'bar-chart-outline' : activeTab === 'completed' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+            size={64}
+            color={activeTab === 'active' ? colors.accentBlue : activeTab === 'completed' ? colors.greenSuccess : colors.redError}
+          />
           <Text style={[styles.emptyTitle, { color: colors.textWhite }]}>
             {activeTab === 'active'
               ? 'Chưa có khoản đầu tư nào'
@@ -482,7 +484,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 40,
   },
-  emptyIcon: { fontSize: 64, marginBottom: 16 },
+
   emptyTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
   emptySubtitle: { fontSize: 14, textAlign: 'center', marginBottom: 24 },
   emptyButton: { paddingHorizontal: 32, paddingVertical: 12, borderRadius: 8 },

@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Dimensions,
+  Animated,
+  Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -36,6 +38,55 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation, route
   const [instruction, setInstruction] = useState('Đưa khuôn mặt vào khung hình');
   const [progress, setProgress] = useState(0);
 
+  // Animation values
+  const scanAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Pulse animation for glowing elements
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.06,
+          duration: 1500,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1.0,
+          duration: 1500,
+          easing: Easing.in(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, [pulseAnim]);
+
+  // Sweeping scan line animation
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanAnim, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scanAnim, {
+          toValue: 0,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, [scanAnim]);
+
+  const translateY = scanAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [10, CIRCLE_SIZE + 10],
+  });
+
   // Chụp ảnh selfie
   const handleCaptureSelfie = async () => {
     try {
@@ -64,7 +115,6 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation, route
     }
   };
 
-  // So khớp khuôn mặt qua Backend (FPT.AI)
   const performFaceMatch = async (selfieUri: string) => {
     setIsProcessing(true);
     setInstruction('Đang so khớp khuôn mặt...');
@@ -73,14 +123,14 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation, route
     try {
       // Step 2: Match faces
       const response = await kycApi.matchFaces(frontImageUri, selfieUri);
-      
+
       if (response.success) {
         setProgress(70);
         setInstruction('Đang hoàn tất KYC...');
-        
+
         // Step 3: Complete KYC
         const completeRes = await kycApi.completeKYC();
-        
+
         if (completeRes.success) {
           setProgress(100);
           Alert.alert('Thành công', 'Xác thực khuôn mặt thành công!', [
@@ -141,39 +191,78 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation, route
 
         {/* Camera Preview with Face Frame */}
         <View style={styles.cameraContainer}>
-          <View style={[styles.cameraPlaceholder, { backgroundColor: colors.darkSurface }]}>
+          <View
+            style={[
+              styles.cameraPlaceholder,
+              {
+                backgroundColor: colors.darkSurface,
+                borderColor: colors.accentBlue + '30',
+                borderWidth: 2,
+              }
+            ]}
+          >
             {capturedSelfie ? (
               <Image source={{ uri: capturedSelfie.uri }} style={styles.capturedSelfie} />
             ) : (
-              <>
-                <Text style={styles.cameraPlaceholderIcon}>👤</Text>
-                <Text style={[styles.cameraPlaceholderText, { color: colors.textWhite }]}>Camera Preview</Text>
-              </>
+              <View style={styles.placeholderInner}>
+                <Animated.View
+                  style={[
+                    styles.pulseCircle,
+                    {
+                      transform: [{ scale: pulseAnim }],
+                      borderColor: colors.accentBlue + '15',
+                    }
+                  ]}
+                />
+                <Ionicons name="person-outline" size={72} color={colors.accentBlue} />
+                <Text style={[styles.cameraPlaceholderText, { color: colors.textWhite }]}>Định vị khuôn mặt</Text>
+                <Text style={[styles.cameraPlaceholderNote, { color: colors.textGray }]}>
+                  Chụp ảnh selfie bằng camera trước
+                </Text>
+              </View>
+            )}
+
+            {/* Sweep Scan Line */}
+            {!capturedSelfie && !isProcessing && (
+              <Animated.View
+                style={[
+                  styles.scanLine,
+                  {
+                    transform: [{ translateY }],
+                    backgroundColor: colors.accentBlue,
+                    shadowColor: colors.accentBlue,
+                  }
+                ]}
+              />
+            )}
+
+            {/* Processing Overlay inside circle */}
+            {isProcessing && (
+              <View style={[styles.processingOverlay, { backgroundColor: 'rgba(10, 15, 30, 0.7)' }]}>
+                <ActivityIndicator size="large" color={colors.accentBlue} />
+                <Text style={[styles.processingText, { color: colors.textWhite }]}>Đang phân tích...</Text>
+              </View>
             )}
           </View>
 
-          {/* Face Frame Overlay */}
-          <View style={styles.faceFrameContainer}>
-            <View
+          {/* Face Frame Overlay (Concentric circular border) */}
+          <View style={styles.faceFrameContainer} pointerEvents="none">
+            <Animated.View
               style={[
                 styles.progressRing,
-                { borderColor: getProgressColor() },
+                {
+                  borderColor: getProgressColor(),
+                  transform: isProcessing ? [{ scale: pulseAnim }] : [],
+                },
               ]}
             >
-              <View style={[styles.faceOval, { borderColor: colors.accentBlue + '60' }]}>
+              <View style={[styles.faceOval, { borderColor: colors.accentBlue + '40' }]}>
                 {progress > 0 && (
                   <Text style={[styles.progressText, { color: colors.accentBlue }]}>{progress}%</Text>
                 )}
               </View>
-            </View>
+            </Animated.View>
           </View>
-
-          {/* Processing overlay */}
-          {isProcessing && (
-            <View style={styles.processingOverlay}>
-              <ActivityIndicator size="large" color={colors.accentBlue} />
-            </View>
-          )}
         </View>
 
         {/* Progress Bar */}
@@ -218,7 +307,7 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation, route
             >
               <Text style={[styles.scanButtonText, { color: colors.textWhite }]}>Bắt đầu quét</Text>
             </TouchableOpacity>
-            
+
             <TouchableOpacity
               style={styles.demoButton}
               onPress={handleDemoSkip}
@@ -285,7 +374,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   cameraContainer: {
-    height: CIRCLE_SIZE + 40,
+    height: CIRCLE_SIZE + 60,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -293,32 +382,61 @@ const styles = StyleSheet.create({
   cameraPlaceholder: {
     width: CIRCLE_SIZE + 20,
     height: CIRCLE_SIZE + 20,
-    borderRadius: 20,
+    borderRadius: (CIRCLE_SIZE + 20) / 2,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+    position: 'relative',
   },
-  cameraPlaceholderIcon: {
-    fontSize: 64,
-    marginBottom: 12,
+  placeholderInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
+  },
+  pulseCircle: {
+    position: 'absolute',
+    width: CIRCLE_SIZE - 20,
+    height: CIRCLE_SIZE - 20,
+    borderRadius: (CIRCLE_SIZE - 20) / 2,
+    borderWidth: 2,
+  },
+  scanLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 3,
+    opacity: 0.8,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 5,
   },
   cameraPlaceholderText: {
     fontSize: 16,
+    fontWeight: '600',
+    marginTop: 12,
     marginBottom: 4,
   },
   cameraPlaceholderNote: {
-    fontSize: 11,
+    fontSize: 12,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   capturedSelfie: {
-    width: CIRCLE_SIZE,
-    height: CIRCLE_SIZE,
-    borderRadius: CIRCLE_SIZE / 2,
+    width: '100%',
+    height: '100%',
+    borderRadius: (CIRCLE_SIZE + 20) / 2,
   },
   processingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
+  },
+  processingText: {
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: '600',
   },
   faceFrameContainer: {
     position: 'absolute',
@@ -326,18 +444,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   progressRing: {
-    width: CIRCLE_SIZE,
-    height: CIRCLE_SIZE,
-    borderRadius: CIRCLE_SIZE / 2,
-    borderWidth: 4,
+    width: CIRCLE_SIZE + 32,
+    height: CIRCLE_SIZE + 32,
+    borderRadius: (CIRCLE_SIZE + 32) / 2,
+    borderWidth: 3,
     justifyContent: 'center',
     alignItems: 'center',
   },
   faceOval: {
-    width: CIRCLE_SIZE * 0.65,
-    height: CIRCLE_SIZE * 0.85,
-    borderRadius: CIRCLE_SIZE * 0.35,
-    borderWidth: 2,
+    width: (CIRCLE_SIZE + 20) * 0.8,
+    height: (CIRCLE_SIZE + 20) * 0.8,
+    borderRadius: ((CIRCLE_SIZE + 20) * 0.8) / 2,
+    borderWidth: 1.5,
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',

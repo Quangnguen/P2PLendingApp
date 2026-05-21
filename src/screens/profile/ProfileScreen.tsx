@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,8 +14,7 @@ import { useAppDispatch, useAppSelector, useAuth, logout } from '@/store';
 import { loadConnections, resetOpenBanking } from '@/store/slices/openBankingSlice';
 import { useTheme } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
-import { formatCurrency } from '@/utils/formatters';
-import { useEffect } from 'react';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 type ProfileScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Profile'>;
@@ -35,19 +34,22 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
 
   const menuItems = [
     {
-      icon: '👤',
+      icon: 'person-outline' as const,
+      iconColor: '#60a5fa',
       title: 'Thông tin cá nhân',
       subtitle: 'Xem và chỉnh sửa thông tin',
       onPress: () => navigation.navigate('PersonalInfo'),
     },
     {
-      icon: '🔐',
+      icon: 'shield-checkmark-outline' as const,
+      iconColor: '#a78bfa',
       title: 'Bảo mật',
       subtitle: 'Mật khẩu, xác thực 2 bước',
       onPress: () => navigation.navigate('Security'),
     },
     {
-      icon: '🏦',
+      icon: 'business-outline' as const,
+      iconColor: '#34d399',
       title: 'Tài khoản ngân hàng',
       subtitle: isBankLinked ? 'Đã liên kết tài khoản' : 'Quản lý tài khoản liên kết',
       onPress: () => navigation.navigate('BankConnections'),
@@ -55,7 +57,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       badgeColor: isBankLinked ? colors.greenSuccess : colors.yellowWarning,
     },
     {
-      icon: '🆔',
+      icon: 'card-outline' as const,
+      iconColor: '#f59e0b',
       title: 'Xác minh danh tính (KYC)',
       subtitle: 'Hoàn tất xác minh để vay',
       onPress: () => navigation.navigate('KYCVerification'),
@@ -71,25 +74,29 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           : colors.yellowWarning,
     },
     {
-      icon: '📜',
+      icon: 'receipt-outline' as const,
+      iconColor: '#fb923c',
       title: 'Lịch sử giao dịch',
       subtitle: 'Xem tất cả giao dịch',
       onPress: () => navigation.navigate('TransactionHistory'),
     },
     {
-      icon: '🔔',
+      icon: 'notifications-outline' as const,
+      iconColor: '#e879f9',
       title: 'Thông báo',
       subtitle: 'Cài đặt thông báo',
       onPress: () => { },
     },
     {
-      icon: '❓',
+      icon: 'help-circle-outline' as const,
+      iconColor: '#38bdf8',
       title: 'Trợ giúp & Hỗ trợ',
       subtitle: 'FAQ, liên hệ hỗ trợ',
       onPress: () => { },
     },
     {
-      icon: '📄',
+      icon: 'document-text-outline' as const,
+      iconColor: '#94a3b8',
       title: 'Điều khoản & Chính sách',
       subtitle: 'Điều khoản sử dụng',
       onPress: () => { },
@@ -122,7 +129,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
               </Text>
             </View>
             <TouchableOpacity style={styles.editAvatarButton}>
-              <Text style={styles.editAvatarIcon}>📷</Text>
+              <Ionicons name="camera" size={16} color={colors.accentBlue} />
             </TouchableOpacity>
           </View>
           <Text style={styles.userName}>{user?.fullName || 'Người dùng'}</Text>
@@ -138,16 +145,20 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>
-                {user?.kycStatus === 'verified' ? '✓' : user?.kycStatus === 'pending' ? '⏳' : '--'}
-              </Text>
+              <Ionicons
+                name={user?.kycStatus === 'verified' ? 'checkmark-circle' : user?.kycStatus === 'pending' ? 'time-outline' : 'ellipse-outline'}
+                size={22}
+                color={user?.kycStatus === 'verified' ? '#34d399' : user?.kycStatus === 'pending' ? '#fbbf24' : 'rgba(255,255,255,0.5)'}
+              />
               <Text style={styles.statLabel}>KYC</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>
-                {user?.isVerified ? '✓' : '--'}
-              </Text>
+              <Ionicons
+                name={user?.isVerified ? 'checkmark-circle' : 'ellipse-outline'}
+                size={22}
+                color={user?.isVerified ? '#34d399' : 'rgba(255,255,255,0.5)'}
+              />
               <Text style={styles.statLabel}>Email</Text>
             </View>
           </View>
@@ -156,8 +167,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         {/* Theme Switch Section */}
         <View style={[styles.themeSection, { backgroundColor: colors.darkSurface }]}>
           <View style={styles.themeSwitchRow}>
-            <View style={styles.themeIconContainer}>
-              <Text style={styles.themeIcon}>{isDark ? '🌙' : '☀️'}</Text>
+            <View style={[styles.themeIconContainer, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(251,191,36,0.15)' }]}>
+              <Ionicons name={isDark ? 'moon-outline' : 'sunny-outline'} size={22} color={isDark ? '#a78bfa' : '#fbbf24'} />
             </View>
             <View style={styles.themeContent}>
               <Text style={[styles.themeTitle, { color: colors.textWhite }]}>
@@ -188,8 +199,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
               style={[styles.menuItem, { backgroundColor: colors.darkSurface }]}
               onPress={item.onPress}
             >
-              <View style={[styles.menuIcon, { backgroundColor: colors.darkBackground }]}>
-                <Text style={styles.menuIconText}>{item.icon}</Text>
+              <View style={[styles.menuIcon, { backgroundColor: (item as any).iconColor + '18' }]}>
+                <Ionicons name={(item as any).icon} size={22} color={(item as any).iconColor} />
               </View>
               <View style={styles.menuContent}>
                 <Text style={[styles.menuTitle, { color: colors.textWhite }]}>
@@ -203,17 +214,17 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                 <View
                   style={[
                     styles.menuBadge,
-                    { backgroundColor: item.badgeColor + '20' },
+                    { backgroundColor: (item as any).badgeColor + '20' },
                   ]}
                 >
                   <Text
-                    style={[styles.menuBadgeText, { color: item.badgeColor }]}
+                    style={[styles.menuBadgeText, { color: (item as any).badgeColor }]}
                   >
                     {item.badge}
                   </Text>
                 </View>
               )}
-              <Text style={[styles.menuArrow, { color: colors.textGray }]}>›</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textGray} />
             </TouchableOpacity>
           ))}
         </View>
@@ -223,7 +234,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           style={[styles.logoutButton, { backgroundColor: colors.redError + '15' }]}
           onPress={handleLogout}
         >
-          <Text style={styles.logoutIcon}>🚪</Text>
+          <Ionicons name="log-out-outline" size={20} color={colors.redError} style={{ marginRight: 8 }} />
           <Text style={[styles.logoutText, { color: colors.redError }]}>Đăng xuất</Text>
         </TouchableOpacity>
 

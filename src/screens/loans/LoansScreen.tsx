@@ -305,7 +305,7 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
         />
       ) : (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>📋</Text>
+          <Ionicons name="document-outline" size={64} color={colors.textGray} />
           <Text style={[styles.emptyTitle, { color: colors.textWhite }]}>Chưa có khoản vay nào</Text>
           <Text style={[styles.emptySubtitle, { color: colors.textGray }]}>
             {activeTab === 'borrowing'
@@ -451,10 +451,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 40,
-  },
-  emptyIcon: {
-    fontSize: 64,
-    marginBottom: 16,
   },
   emptyTitle: {
     fontSize: 20,

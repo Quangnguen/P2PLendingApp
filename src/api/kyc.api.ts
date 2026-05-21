@@ -23,17 +23,24 @@ export interface FaceMatchResult {
 
 export const kycApi = {
   /**
-   * OCR nhận dạng CMND/CCCD
-   * Gửi ảnh CMND → FPT.AI → trả về thông tin trích xuất
+   * OCR nhận dạng CMND/CCCD bằng Tesseract.js (local OCR)
+   * @param imageUri - URI ảnh CCCD
+   * @param imageType - 'front' | 'back' — mặt trước hay mặt sau
    */
-  recognizeID: async (imageUri: string): Promise<{ success: boolean; data: IDRecognitionResult }> => {
+  recognizeID: async (
+    imageUri: string,
+    imageType: 'front' | 'back' = 'front',
+  ): Promise<{ success: boolean; data: IDRecognitionResult; imageUrl?: string }> => {
     const formData = new FormData();
 
     formData.append('image', {
       uri: imageUri,
       type: 'image/jpeg',
-      name: 'cccd.jpg',
+      name: imageType === 'back' ? 'cccd_back.jpg' : 'cccd_front.jpg',
     } as any);
+
+    // Truyền imageType để backend lưu đúng field
+    formData.append('imageType', imageType);
 
     const response = await apiClient.post('/kyc/recognize-id', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -44,8 +51,8 @@ export const kycApi = {
   },
 
   /**
-   * So khớp khuôn mặt
-   * Gửi 2 ảnh (CMND + selfie) → FPT.AI → trả về % giống
+   * So khớp khuôn mặt bằng pixel MSE similarity (local)
+   * Gửi 2 ảnh (CCCD + selfie) → Backend tính độ tương đồng
    */
   matchFaces: async (
     idImageUri: string,
@@ -82,12 +89,14 @@ export const kycApi = {
   },
 
   /**
-   * Kiểm tra trạng thái KYC
+   * Kiểm tra trạng thái KYC hiện tại (bao gồm reKycReason nếu có)
    */
   getKYCStatus: async (): Promise<{
     status: string;
     idInfo: IDRecognitionResult | null;
     faceMatchScore: number | null;
+    completedAt: string | null;
+    reKycReason: string | null;
   }> => {
     const response = await apiClient.get('/kyc/status');
     return response.data;

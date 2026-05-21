@@ -34,7 +34,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
     {
       id: '1',
       name: 'Hỗ trợ khách hàng',
-      avatar: '🎧',
+      avatar: 'headset-outline',
       lastMessage: 'Cảm ơn bạn đã liên hệ. Chúng tôi sẽ phản hồi sớm.',
       timestamp: new Date('2024-01-20T10:30:00'),
       unreadCount: 2,
@@ -43,7 +43,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
     {
       id: '2',
       name: 'Nguyễn Văn A',
-      avatar: '👤',
+      avatar: 'person-outline',
       lastMessage: 'Tôi đã chuyển tiền rồi, bạn kiểm tra giúp nhé.',
       timestamp: new Date('2024-01-19T15:45:00'),
       unreadCount: 0,
@@ -52,7 +52,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
     {
       id: '3',
       name: 'Trần Thị B',
-      avatar: '👩',
+      avatar: 'person-circle-outline',
       lastMessage: 'Khoản vay của tôi đã được duyệt chưa?',
       timestamp: new Date('2024-01-18T09:00:00'),
       unreadCount: 1,
@@ -61,7 +61,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
     {
       id: '4',
       name: 'Thông báo hệ thống',
-      avatar: '🔔',
+      avatar: 'notifications-outline',
       lastMessage: 'Khoản vay #001 đã được thanh toán thành công.',
       timestamp: new Date('2024-01-17T12:00:00'),
       unreadCount: 5,
@@ -100,7 +100,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
     >
       <View style={styles.avatarContainer}>
         <View style={[styles.avatar, { backgroundColor: colors.darkSurface }]}>
-          <Text style={styles.avatarText}>{item.avatar}</Text>
+          <Ionicons name={item.avatar as any} size={28} color={colors.textGray} />
         </View>
         {item.isOnline && <View style={[styles.onlineIndicator, { backgroundColor: colors.greenSuccess, borderColor: colors.darkBackground }]} />}
       </View>
@@ -157,8 +157,8 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
         />
       ) : (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>💬</Text>
-          <Text style={[styles.emptyTitle, { color: colors.textWhite }]}>Chưa có tin nhắn</Text>
+          <Ionicons name="chatbubbles-outline" size={64} color={colors.textGray} />
+          <Text style={[styles.emptyTitle, { color: colors.textWhite, marginTop: 16 }]}>Chưa có tin nhắn</Text>
           <Text style={[styles.emptySubtitle, { color: colors.textGray }]}>
             Các cuộc trò chuyện của bạn sẽ xuất hiện ở đây
           </Text>
@@ -207,9 +207,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarText: {
-    fontSize: 24,
-  },
+
   onlineIndicator: {
     position: 'absolute',
     bottom: 2,
@@ -266,10 +264,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 40,
   },
-  emptyIcon: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
+
   emptyTitle: {
     fontSize: 20,
     fontWeight: 'bold',

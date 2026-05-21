@@ -10,6 +10,7 @@ import {
   TextStyle,
 } from 'react-native';
 import { useTheme } from '../../providers';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -70,7 +71,11 @@ const Input: React.FC<InputProps> = ({
             style={styles.iconRight}
             onPress={() => setIsPasswordVisible(!isPasswordVisible)}
           >
-            <Text style={styles.eyeIcon}>{isPasswordVisible ? '👁️' : '👁️‍🗨️'}</Text>
+            <Ionicons
+              name={isPasswordVisible ? 'eye-outline' : 'eye-off-outline'}
+              size={20}
+              color={colors.textGray}
+            />
           </TouchableOpacity>
         )}
         
@@ -117,9 +122,7 @@ const styles = StyleSheet.create({
   iconRight: {
     paddingRight: 16,
   },
-  eyeIcon: {
-    fontSize: 18,
-  },
+
   errorText: {
     fontSize: 12,
     marginTop: 4,

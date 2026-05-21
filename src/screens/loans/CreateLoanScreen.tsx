@@ -50,11 +50,16 @@ import { loadCreditScore } from '../../store/slices/openBankingSlice';
 import { ethers } from 'ethers';
 
 
-const MOCK_ETH_PRICE = '2500';
+// Price cache — sẽ được update từ oracle khi app load
+// Fallback $2000 nếu không lấy được
+const MOCK_ETH_PRICE = '2000';
+
+// Buffer 1% để đảm bảo collateral không bị reject do precision loss
+const COLLATERAL_BUFFER_PCT = 1.01;
 
 const CreateLoanScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { balances, sendTransaction, getProvider, refreshBalances } = useWeb3();
+  const { connection, balances, sendTransaction, getProvider, refreshBalances } = useWeb3();
   const { user } = useAuth();
   const dispatch = useAppDispatch();
   const { connections, creditScore } = useOpenBanking();
@@ -85,6 +90,32 @@ const CreateLoanScreen: React.FC = () => {
   const [dynamicRatio, setDynamicRatio] = useState(150);
 
   // =====================
+  // ON-CHAIN QUERY HELPERS
+  // =====================
+  /**
+   * Lấy collateral ratio thực tế từ smart contract (dùng chính xác hơn offline calc)
+   * Contract dùng CreditScoreOracle on-chain, frontend dùng OpenBanking score → không khớp
+   */
+  const getOnChainCollateralRatio = async (borrowerAddress: string): Promise<number> => {
+    try {
+      const provider = getProvider();
+      if (!provider) return dynamicRatio;
+      const p2pIface = new ethers.utils.Interface([
+        'function getCollateralRatioForBorrower(address) view returns (uint256 ratio, uint256 creditScore, bool hasScore)'
+      ]);
+      const p2pContract = new ethers.Contract(
+        CONTRACT_ADDRESSES.P2P_LENDING, p2pIface, provider
+      );
+      const [ratio] = await p2pContract.getCollateralRatioForBorrower(borrowerAddress);
+      // ratio là basis points (15000 = 150%), convert về % (150)
+      return Number(ratio) / 100;
+    } catch (e) {
+      console.warn('Cannot fetch on-chain ratio, using frontend estimate:', e);
+      return dynamicRatio;
+    }
+  };
+
+  // =====================
   // EFFECTS
   // =====================
   // Load điểm tín dụng khi vào màn hình
@@ -103,7 +134,7 @@ const CreateLoanScreen: React.FC = () => {
       else if (realCreditScore >= 600) ratio = 155;
       else if (realCreditScore >= 500) ratio = 165;
       else if (realCreditScore >= 400) ratio = 175;
-      
+
       setDynamicRatio(ratio);
 
       const collateral = calculateRequiredCollateral(
@@ -204,37 +235,57 @@ const CreateLoanScreen: React.FC = () => {
     }
   };
 
-    const handleConfirm = async () => {
+  const handleConfirm = async () => {
     setIsLoading(true);
     try {
       // Bước 1: Gửi yêu cầu vay và khóa ETH trên smart contract
       setCreatingStep('Đang khởi tạo yêu cầu vay trên blockchain...');
-      
-      const collateralInWei = ethers.utils.parseEther(requiredCollateral);
+
+      // FIX: Dùng connection.address (ví đang kết nối thực tế) thay vì getSigner() lấy account #0
+      const borrowerAddress = connection.address;
+      const onChainRatio = borrowerAddress
+        ? await getOnChainCollateralRatio(borrowerAddress)
+        : dynamicRatio;
+
+      // Tính collateral theo on-chain ratio + 1% buffer (để tránh cạn do precision)
+      const requiredCollateralExact = calculateRequiredCollateral(
+        amount, MOCK_ETH_PRICE, onChainRatio
+      );
+      // Tăng 1% buffer để đảm bảo luôn pass collateral check
+      const collateralWithBuffer = (parseFloat(requiredCollateralExact) * COLLATERAL_BUFFER_PCT).toFixed(6);
+
+      const collateralInWei = ethers.utils.parseEther(collateralWithBuffer);
       const principalInWei = ethers.utils.parseUnits(amount, 6); // USDT 6 decimals
 
       const p2pInterface = new ethers.utils.Interface([
-        'function createLoanRequest((address loanToken, address collateralToken, uint256 principal, uint256 interestRate, uint256 collateralAmount, uint256 duration)) returns (uint256)',
-        'event LoanRequestCreated(uint256 indexed requestId, address indexed borrower, uint256 principal)'
+        // Struct field order (phải khớp chính xác với IP2PLending.sol):
+        // loanToken, collateralToken, principal, interestRate, collateralAmount, duration,
+        // loanTokenDecimals (field 7), collateralDecimals (field 8)
+        'function createLoanRequest((address loanToken, address collateralToken, uint256 principal, uint256 interestRate, uint256 collateralAmount, uint256 duration, uint8 loanTokenDecimals, uint8 collateralDecimals)) returns (uint256)',
+        // Event signature phải khớp với IP2PLending.sol để parse log
+        'event LoanRequestCreated(uint256 indexed requestId, address indexed borrower, address loanToken, address collateralToken, uint256 principal, uint256 interestRate, uint256 collateralAmount, uint256 duration, uint256 collateralRatio)'
       ]);
 
       const interestRateBP = Math.round(parseFloat(interestRate) * 100);
       const durationSeconds = duration * 86400;
 
       const data = p2pInterface.encodeFunctionData('createLoanRequest', [[
-        CONTRACT_ADDRESSES.USDT,
-        ethers.constants.AddressZero, // ETH as collateral
-        principalInWei,
-        interestRateBP,
-        collateralInWei,
-        durationSeconds
+        CONTRACT_ADDRESSES.USDT,          // loanToken
+        ethers.constants.AddressZero,     // collateralToken (ETH = address(0))
+        principalInWei,                   // principal
+        interestRateBP,                   // interestRate (basis points)
+        collateralInWei,                  // collateralAmount (ETH in wei)
+        durationSeconds,                  // duration (seconds)
+        6,                                // FIX: loanTokenDecimals (USDT = 6) — field 7
+        18,                               // FIX: collateralDecimals (ETH = 18) — field 8
       ]]);
+
 
       const txHash = await sendTransaction({
         to: CONTRACT_ADDRESSES.P2P_LENDING,
         value: collateralInWei,
         data: data,
-        gasLimit: 500000, // Tăng gas limit để tránh lỗi out of gas
+        gasLimit: 5000000, // Tăng gas limit để tránh lỗi out of gas
       });
 
       if (!txHash) {
@@ -366,11 +417,11 @@ const CreateLoanScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
-      
+
       {/* Header với nút Back */}
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton} 
+        <TouchableOpacity
+          style={styles.backButton}
           onPress={handleGoBack}
           activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={20} color="#1a1a2e" />
@@ -387,7 +438,7 @@ const CreateLoanScreen: React.FC = () => {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          
+
           {/* Header - Điểm tín dụng */}
           <View style={styles.creditScoreCard}>
             <Text style={styles.creditScoreLabel}>Điểm tín dụng của bạn</Text>
@@ -530,7 +581,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
-  
+
   // Header styles
   header: {
     flexDirection: 'row',

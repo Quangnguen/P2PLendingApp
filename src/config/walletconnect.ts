@@ -6,13 +6,13 @@
 export const GANACHE_ACCOUNTS = [
   {
     index: 0,
-    address: '0xef81849927B8195D8626B743A88d1911Fc50575F',
+    address: '0x0BA0aF86A2D23e59D002c7084F77F4E4049F5D6C',
     label: 'Account #0 — Deployer',
     emoji: '🏦',
   },
   {
     index: 1,
-    address: '0x0BA0aF86A2D23e59D002c7084F77F4E4049F5D6C',
+    address: '0xef81849927B8195D8626B743A88d1911Fc50575F',
     label: 'Account #1 — Alice',
     emoji: '👩',
   },
@@ -62,10 +62,9 @@ export const SUPPORTED_CHAINS = {
   GANACHE: {
     id: 1337,
     name: 'Ganache Local',
-    // Physical device (USB): cần chạy trước:
-    //   adb reverse tcp:7545 tcp:7545
-    //   adb reverse tcp:9000 tcp:9000
-    // Emulator Android: đổi thành 'http://10.0.2.2:7545'
+    // ✅ Physical device (WiFi): dùng IP máy tính
+    // ✅ Physical device (USB): đổi thành 'http://localhost:7545' sau khi chạy adb reverse tcp:7545 tcp:7545
+    // ❌ Emulator Android: đổi thành 'http://10.0.2.2:7545'
     rpcUrl: 'http://localhost:7545',
     blockExplorer: '', // Ganache không có block explorer
     wcNamespace: 'eip155:1337',
@@ -125,13 +124,14 @@ export const PROVIDER_CONFIG = {
 
 // ============================================================
 // Contract Addresses — cập nhật sau khi deploy lên Ganache
+// SYNC: chạy `npx hardhat run scripts/deploy-ganache.ts` để lấy địa chỉ mới
 // ============================================================
 export const CONTRACT_ADDRESSES = {
-  USDT: '0x046F4096C886d9020FA3e32EAaad1403E9539E13',
-  PRICE_ORACLE: '0x42021620557DD9FAdd3737cAc60520AB326FCec6',
-  COLLATERAL_MANAGER: '0x1102586bB180AF4810C808ecbeF07541e8937234',
-  P2P_LENDING: '0xB115A60547f785F836022dC252ceaBaaA1f3e108',
-  CREDIT_SCORE_ORACLE: '0x24cfE460432Ef08656b002bbCFf7A3d7b36d17be',
-  DEBT_TOKEN: '0xF3aA8482B0FbD8345A6E801eDB1e1217D604cE16',
-
+  USDT: '0xBe537ceB7613Cf4B13Ac0d2e26Ec09270316530A',
+  PRICE_ORACLE: '0x5931Be403F354Cf1A3E7c9118dFc632866E5CEDD',
+  CREDIT_SCORE_ORACLE: '0x09e989bCF8077515709Fd5af48B3EFAf67e18Fd0',
+  DEBT_TOKEN: '0x52804627e04f4e3593869Ec5d83950277ad6F2cD',
+  COLLATERAL_MANAGER: '0xE233853Ff8b578f43c8f0B63Dd16cE1F3eAa3656',
+  P2P_LENDING: '0xE4640003192F15d9bC1C57849a9C51419b2BC0CD',
 };
+

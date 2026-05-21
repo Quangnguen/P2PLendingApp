@@ -1,186 +1,383 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
+  TouchableOpacity,
+  StatusBar,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
-import { Button } from '@/components/common';
+import LinearGradient from 'react-native-linear-gradient';
 import { useTheme } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type LinkSuccessScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'LinkSuccess'>;
   route: RouteProp<RootStackParamList, 'LinkSuccess'>;
 };
 
-const LinkSuccessScreen: React.FC<LinkSuccessScreenProps> = ({
-  navigation,
-  route,
-}) => {
+const FEATURES = [
+  {
+    icon: 'wallet-outline',
+    color: '#60a5fa',
+    title: 'Xem số dư realtime',
+    subtitle: 'Theo dõi số dư tài khoản ngân hàng trực tiếp trong app',
+  },
+  {
+    icon: 'bar-chart-outline',
+    color: '#34d399',
+    title: 'Lịch sử giao dịch',
+    subtitle: 'Xem toàn bộ giao dịch ngân hàng được đồng bộ tự động',
+  },
+  {
+    icon: 'shield-checkmark-outline',
+    color: '#a78bfa',
+    title: 'Bảo mật end-to-end',
+    subtitle: 'Dữ liệu được mã hóa 256-bit, không lưu mật khẩu',
+  },
+];
+
+const LinkSuccessScreen: React.FC<LinkSuccessScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
   const { bankName } = route.params;
 
+  // Animations
+  const scaleAnim   = useRef(new Animated.Value(0)).current;
+  const fadeAnim    = useRef(new Animated.Value(0)).current;
+  const slideAnim   = useRef(new Animated.Value(40)).current;
+  const pulse1      = useRef(new Animated.Value(1)).current;
+  const pulse2      = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    // Sequence: icon pop → content fade-slide
+    Animated.sequence([
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 60,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+
+    // Pulse rings
+    const loopPulse = (anim: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(anim, {
+            toValue: 1.35,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+
+    loopPulse(pulse1, 0);
+    loopPulse(pulse2, 600);
+  }, []);
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.darkBackground }]}>
-      <View style={styles.content}>
-        {/* Success Icon */}
-        <View style={styles.iconContainer}>
-          <View style={[styles.iconOuter, { backgroundColor: colors.greenSuccess + '20' }]}>
-            <View style={[styles.iconInner, { backgroundColor: colors.greenSuccess }]}>
-              <Ionicons name="checkmark" size={48} color={colors.textWhite} />
-            </View>
+    <LinearGradient colors={['#0f172a', '#1e293b', '#0f172a']} style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <SafeAreaView style={styles.safeArea}>
+
+        {/* ─── Content ─── */}
+        <View style={styles.content}>
+
+          {/* Success Icon with pulse rings */}
+          <View style={styles.iconWrapper}>
+            {/* Pulse ring 1 */}
+            <Animated.View
+              style={[
+                styles.pulseRing,
+                { borderColor: '#10b981', transform: [{ scale: pulse1 }], opacity: fadeAnim },
+              ]}
+            />
+            {/* Pulse ring 2 */}
+            <Animated.View
+              style={[
+                styles.pulseRing,
+                styles.pulseRing2,
+                { borderColor: '#10b981', transform: [{ scale: pulse2 }], opacity: fadeAnim },
+              ]}
+            />
+
+            {/* Main circle */}
+            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+              <LinearGradient
+                colors={['#059669', '#10b981', '#34d399']}
+                style={styles.iconCircle}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Ionicons name="checkmark" size={52} color="#fff" />
+              </LinearGradient>
+            </Animated.View>
           </View>
+
+          {/* Title block */}
+          <Animated.View
+            style={[
+              styles.titleBlock,
+              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+            ]}
+          >
+            <Text style={styles.title}>Kết nối thành công!</Text>
+            <View style={styles.bankBadge}>
+              <Ionicons name="business-outline" size={14} color="#10b981" />
+              <Text style={styles.bankBadgeText}>{bankName}</Text>
+            </View>
+            <Text style={styles.subtitle}>
+              Tài khoản ngân hàng của bạn đã được liên kết an toàn. Bạn có thể sử dụng đầy đủ tính năng dưới đây.
+            </Text>
+          </Animated.View>
+
+          {/* Feature cards */}
+          <Animated.View
+            style={[
+              styles.featuresContainer,
+              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+            ]}
+          >
+            {FEATURES.map((item, index) => (
+              <View
+                key={index}
+                style={[
+                  styles.featureCard,
+                  { backgroundColor: 'rgba(255,255,255,0.05)', borderColor: item.color + '25' },
+                ]}
+              >
+                <View style={[styles.featureIconBox, { backgroundColor: item.color + '20' }]}>
+                  <Ionicons name={item.icon as any} size={22} color={item.color} />
+                </View>
+                <View style={styles.featureText}>
+                  <Text style={styles.featureTitle}>{item.title}</Text>
+                  <Text style={styles.featureSubtitle}>{item.subtitle}</Text>
+                </View>
+                <Ionicons name="checkmark-circle" size={18} color={item.color} />
+              </View>
+            ))}
+          </Animated.View>
         </View>
 
-        {/* Title */}
-        <Text style={[styles.title, { color: colors.textWhite }]}>Kết nối thành công!</Text>
-        <Text style={[styles.subtitle, { color: colors.textGray }]}>
-          Tài khoản {bankName} của bạn đã được liên kết thành công với ứng dụng.
-        </Text>
+        {/* ─── Footer buttons ─── */}
+        <Animated.View
+          style={[styles.footer, { opacity: fadeAnim }]}
+        >
+          <TouchableOpacity
+            onPress={() => navigation.navigate('BankConnections')}
+            activeOpacity={0.85}
+            style={styles.primaryBtnWrapper}
+          >
+            <LinearGradient
+              colors={['#059669', '#10b981']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.primaryBtn}
+            >
+              <Ionicons name="wallet-outline" size={20} color="#fff" />
+              <Text style={styles.primaryBtnText}>Xem tài khoản</Text>
+            </LinearGradient>
+          </TouchableOpacity>
 
-        {/* Features */}
-        <View style={styles.featuresContainer}>
-          <View style={[styles.featureItem, { backgroundColor: colors.darkSurface }]}>
-            <View style={[styles.featureIcon, { backgroundColor: colors.accentBlue + '20' }]}>
-              <Text style={styles.featureIconText}>💰</Text>
-            </View>
-            <View style={styles.featureContent}>
-              <Text style={[styles.featureTitle, { color: colors.textWhite }]}>Xem số dư</Text>
-              <Text style={[styles.featureSubtitle, { color: colors.textGray }]}>
-                Theo dõi số dư tài khoản realtime
-              </Text>
-            </View>
-          </View>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Main')}
+            activeOpacity={0.8}
+            style={styles.secondaryBtn}
+          >
+            <Ionicons name="home-outline" size={18} color="rgba(255,255,255,0.55)" />
+            <Text style={styles.secondaryBtnText}>Về trang chủ</Text>
+          </TouchableOpacity>
+        </Animated.View>
 
-          <View style={[styles.featureItem, { backgroundColor: colors.darkSurface }]}>
-            <View style={[styles.featureIcon, { backgroundColor: colors.accentBlue + '20' }]}>
-              <Text style={styles.featureIconText}>📊</Text>
-            </View>
-            <View style={styles.featureContent}>
-              <Text style={[styles.featureTitle, { color: colors.textWhite }]}>Lịch sử giao dịch</Text>
-              <Text style={[styles.featureSubtitle, { color: colors.textGray }]}>
-                Xem tất cả giao dịch ngân hàng
-              </Text>
-            </View>
-          </View>
-
-          <View style={[styles.featureItem, { backgroundColor: colors.darkSurface }]}>
-            <View style={[styles.featureIcon, { backgroundColor: colors.accentBlue + '20' }]}>
-              <Text style={styles.featureIconText}>🔒</Text>
-            </View>
-            <View style={styles.featureContent}>
-              <Text style={[styles.featureTitle, { color: colors.textWhite }]}>Bảo mật cao</Text>
-              <Text style={[styles.featureSubtitle, { color: colors.textGray }]}>
-                Dữ liệu được mã hóa end-to-end
-              </Text>
-            </View>
-          </View>
-        </View>
-      </View>
-
-      {/* Buttons */}
-      <View style={styles.footer}>
-        <Button
-          title="Xem tài khoản"
-          onPress={() => navigation.navigate('BankConnections')}
-          style={styles.primaryButton}
-        />
-        <Button
-          title="Về trang chủ"
-          onPress={() => navigation.navigate('Main')}
-          variant="secondary"
-          style={styles.secondaryButton}
-        />
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  safeArea: { flex: 1 },
+
   content: {
     flex: 1,
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: 48,
   },
-  iconContainer: {
+
+  // ─── Icon ───
+  iconWrapper: {
+    width: 130,
+    height: 130,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 36,
+  },
+  pulseRing: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    borderWidth: 2,
+  },
+  pulseRing2: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+  },
+  iconCircle: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+
+  // ─── Title ───
+  titleBlock: {
+    alignItems: 'center',
     marginBottom: 32,
   },
-  iconOuter: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  iconInner: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkmark: {
-    fontSize: 40,
-  },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    textAlign: 'center',
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 10,
+    letterSpacing: -0.5,
   },
-  subtitle: {
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 40,
-  },
-  featuresContainer: {
-    width: '100%',
-  },
-  featureItem: {
+  bankBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    gap: 6,
+    backgroundColor: 'rgba(16,185,129,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(16,185,129,0.35)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    marginBottom: 14,
   },
-  featureIcon: {
-    width: 48,
-    height: 48,
+  bankBadgeText: {
+    color: '#10b981',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.5)',
+    textAlign: 'center',
+    lineHeight: 22,
+    paddingHorizontal: 8,
+  },
+
+  // ─── Features ───
+  featuresContainer: {
+    width: '100%',
+    gap: 10,
+  },
+  featureCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 12,
+  },
+  featureIconBox: {
+    width: 44,
+    height: 44,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
-  featureIconText: {
-    fontSize: 24,
-  },
-  featureContent: {
+  featureText: {
     flex: 1,
   },
   featureTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
+    color: '#fff',
     marginBottom: 2,
   },
   featureSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.45)',
+    lineHeight: 17,
   },
+
+  // ─── Footer ───
   footer: {
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+    gap: 10,
   },
-  primaryButton: {
-    marginBottom: 12,
+  primaryBtnWrapper: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  secondaryButton: {},
+  primaryBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  primaryBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  secondaryBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  secondaryBtnText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 15,
+    fontWeight: '500',
+  },
 });
 
 export default LinkSuccessScreen;

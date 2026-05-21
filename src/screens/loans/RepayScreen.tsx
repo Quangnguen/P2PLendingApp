@@ -28,7 +28,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { Card } from '@/components/common';
 import { useTheme, useWeb3 } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
-import { CONTRACT_ADDRESSES } from '@/config/walletconnect';
+import { CONTRACT_ADDRESSES, CURRENT_CHAIN } from '@/config/walletconnect';
 import {
   calculateInterest,
   calculateRepaymentAmount,
@@ -76,7 +76,7 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
         const { loanApi } = await import('@/api/loan.api');
         const res = await loanApi.getLoanDetail(loanId);
         const data = res?.data || res;
-        
+
         setLoan({
           id: data._id || loanId,
           amount: toNum(data.principalAmount || data.loanAmount).toString(),
@@ -145,20 +145,45 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
     try {
       let txHash = null;
 
-      if (loan.loanContractAddress) {
+      if (loan.loanContractAddress && ethers.utils.isAddress(loan.loanContractAddress)) {
         // LUỒNG CHUẨN BLOCKCHAIN
+        setRepayStep('Đang lấy số tiền cần trả từ smart contract...');
+
+        // FIX 1: Lấy totalAmount ON-CHAIN để tránh lệch block-time
+        // totalRepayment tính off-chain có thể bị stale vài giây
+        const loanIface = new ethers.utils.Interface([
+          'function getTotalRepaymentAmount() view returns (uint256)',
+        ]);
+        const loanContract = new ethers.Contract(
+          loan.loanContractAddress,
+          loanIface,
+          // @ts-ignore - provider từ Web3
+          new ethers.providers.JsonRpcProvider(CURRENT_CHAIN.rpcUrl),
+        );
+        let onChainTotal: ethers.BigNumber;
+        try {
+          onChainTotal = await loanContract.getTotalRepaymentAmount();
+        } catch {
+          // Fallback về off-chain nếu không đọc được contract
+          onChainTotal = ethers.utils.parseUnits(totalRepayment, 6);
+        }
+
+        // FIX 2: Approve thêm 0.5% buffer (interest tiếp tục tăng giữa approve và repay tx)
+        const approveAmount = onChainTotal.mul(1005).div(1000);
+
         setRepayStep('Đang ủy quyền chuyển USDT cho Smart Contract...');
-        
-        // 1. Approve USDT cho Loan contract
-        const usdtInterface = new ethers.utils.Interface(['function approve(address spender, uint256 amount) returns (bool)']);
+        const usdtInterface = new ethers.utils.Interface([
+          'function approve(address spender, uint256 amount) returns (bool)',
+        ]);
         const approveData = usdtInterface.encodeFunctionData('approve', [
           loan.loanContractAddress,
-          ethers.utils.parseUnits(totalRepayment, 6)
+          approveAmount,
         ]);
-        
+
         const approveTx = await sendTransaction({
           to: CONTRACT_ADDRESSES.USDT,
-          data: approveData
+          data: approveData,
+          gasLimit: 800000,
         });
 
         if (!approveTx) {
@@ -167,18 +192,18 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
           return;
         }
 
-        // 2. Gọi hàm repay trên Loan contract
+        // FIX 3: Gọi repay() với gas đủ (repay cần ~200-250k gas)
         setRepayStep('Đang xử lý trả nợ và hoàn trả ETH...');
-        const loanInterface = new ethers.utils.Interface(['function repay()']);
-        const repayData = loanInterface.encodeFunctionData('repay', []);
-        
+        const repayIface = new ethers.utils.Interface(['function repay()']);
+        const repayData = repayIface.encodeFunctionData('repay', []);
+
         txHash = await sendTransaction({
           to: loan.loanContractAddress,
           data: repayData,
-          gasLimit: 500000 // Tăng gas limit vì thực hiện nhiều việc
+          gasLimit: 400000, // repay: ~180k gas + withdrawCollateral ~60k = ~240k, dùng 400k để an toàn
         });
       } else {
-        // LUỒNG CŨ
+        // LUỒNG CŨ - Khoản vay không có smart contract riêng
         setRepayStep('Đang chuyển USDT trên blockchain...');
         if (!loan.lenderWallet) {
           toast.error('Người cho vay chưa liên kết ví nhận thanh toán.', 'Lỗi');
@@ -202,14 +227,25 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
         amount: parseFloat(totalRepayment),
       });
 
-      // Bước 3: Refresh balances
+      // Bước 3: Chờ Ganache mine block xong rồi mới refresh
+      // repay() → withdrawCollateral() → ETH transfer cần đủ thời gian
+      setRepayStep('Đang cập nhật số dư ví...');
+      console.log('[Repay] Waiting 3s for Ganache to finalize ETH transfer...');
+      await new Promise(resolve => setTimeout(resolve, 3000)); // tăng lên 3s
       await refreshBalances();
+      console.log('[Repay] Balances refreshed after repay');
 
       toast.success(
-        `Bạn đã trả ${formatCurrency(totalRepayment)} USDT.\nTài sản thế chấp ${loan.collateralAmount} ETH đã được hoàn trả.\n\nTX: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
-        'Trả nợ thành công'
+        `Đã trả ${formatCurrency(totalRepayment)} USDT thành công!\n` +
+        `↳ ${loan.collateralAmount} ETH đã hoàn về ví của bạn.\n` +
+        `Kiểm tra số dư trong tab Ví.\n\n` +
+        `TX: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
+        'Trả nợ thành công ✅'
       );
       navigation.goBack();
+      // Refresh lần 2 sau khi quay lại màn hình trước
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await refreshBalances();
     } catch (error: any) {
       const msg = error?.response?.data?.message || error.message || 'Không thể trả nợ. Vui lòng thử lại.';
       toast.error(msg, 'Lỗi');

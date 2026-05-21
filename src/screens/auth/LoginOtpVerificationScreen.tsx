@@ -14,6 +14,7 @@ import { Button } from '../../components/common';
 import { useAppDispatch, useAuth, verifyLoginOtp, clearAuthError, useToast } from '../../store';
 import { useTheme } from '../../providers';
 import { RootStackParamList } from '../../navigation/types';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 type LoginOtpVerificationScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'LoginOtpVerification'>;
@@ -91,12 +92,12 @@ const LoginOtpVerificationScreen: React.FC<LoginOtpVerificationScreenProps> = ({
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Text style={[styles.backButtonText, { color: colors.accentBlue }]}>← Quay lại</Text>
+          <Ionicons name="arrow-back" size={24} color={colors.accentBlue} />
         </TouchableOpacity>
 
         <View style={styles.header}>
           <View style={[styles.iconContainer, { backgroundColor: colors.accentBlue + '33' }]}>
-            <Text style={styles.icon}>🔐</Text>
+            <Ionicons name="shield-checkmark-outline" size={40} color={colors.accentBlue} />
           </View>
           <Text style={[styles.title, { color: colors.textWhite }]}>Xác thực đăng nhập</Text>
           <Text style={[styles.subtitle, { color: colors.textGray }]}>
@@ -144,7 +145,7 @@ const LoginOtpVerificationScreen: React.FC<LoginOtpVerificationScreenProps> = ({
         {/* Trust Device Switch */}
         <View style={[styles.trustDeviceContainer, { backgroundColor: colors.darkSurface }]}>
           <View style={styles.trustDeviceInfo}>
-            <Text style={styles.trustDeviceIcon}>🛡️</Text>
+            <Ionicons name="shield-outline" size={24} color={colors.accentBlue} style={{ marginRight: 12 }} />
             <View style={styles.trustDeviceTextContainer}>
               <Text style={[styles.trustDeviceTitle, { color: colors.textWhite }]}>
                 Tin cậy thiết bị này
@@ -214,9 +215,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  icon: {
-    fontSize: 36,
-  },
+
   title: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -272,10 +271,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-  },
-  trustDeviceIcon: {
-    fontSize: 24,
-    marginRight: 12,
   },
   trustDeviceTextContainer: {
     flex: 1,

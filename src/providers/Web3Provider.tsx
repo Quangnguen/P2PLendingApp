@@ -13,11 +13,13 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
   ReactNode,
 } from 'react';
 import { Alert, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ethers } from 'ethers';
+
 
 // Import config
 import {
@@ -152,6 +154,13 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
    * Lỗi (nếu có)
    */
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Guard chống duplicate refreshBalances:
+   * Nếu đang refresh → bỏ qua call mới để tránh Ganache bị 2 request đồng thời
+   * dẫn đến SERVER_ERROR "missing response".
+   */
+  const isRefreshingRef = useRef(false);
 
   // =====================
   // PROVIDER
@@ -291,27 +300,86 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
    * Gọi khi user pull-to-refresh hoặc sau giao dịch
    */
   const refreshBalances = useCallback(async () => {
-    // Không thể refresh nếu chưa kết nối
     if (!connection.address) return;
 
-    // Bật loading
+    // ── GUARD: chặn duplicate call (Ganache không handle concurrent requests tốt) ──
+    if (isRefreshingRef.current) {
+      console.log('[refreshBalances] Skipped — already in progress');
+      return;
+    }
+    isRefreshingRef.current = true;
     setBalances(prev => ({ ...prev, isLoading: true }));
 
-    try {
-      // Fetch số dư mới
-      const newBalances = await fetchBalances(connection.address);
+    /**
+     * withTimeout: wrap một Promise với timeout 8 giây.
+     * Ganache local đôi khi không trả response → request treo vô hạn.
+     * Sau 8s tự reject với TimeoutError để caller biết cần retry.
+     */
+    const withTimeout = <T,>(promise: Promise<T>, ms = 8000): Promise<T> =>
+      Promise.race([
+        promise,
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(Object.assign(new Error(`Timeout after ${ms}ms`), { code: 'TIMEOUT' })), ms)
+        ),
+      ]);
 
-      // Cập nhật state
-      setBalances({
-        eth: newBalances.eth,
-        usdt: newBalances.usdt,
-        isLoading: false,
-      });
-    } catch (err) {
-      console.error('Error refreshing balances:', err);
-      setBalances(prev => ({ ...prev, isLoading: false }));
+    const doFetch = async (retryCount = 0): Promise<void> => {
+      const freshProvider = new ethers.providers.StaticJsonRpcProvider(
+        CURRENT_CHAIN.rpcUrl,
+        { chainId: CURRENT_CHAIN.id, name: CURRENT_CHAIN.name }
+      );
+
+      try {
+        // ETH balance với timeout
+        const ethBalanceWei = await withTimeout(freshProvider.getBalance(connection.address!));
+        const ethFormatted = ethers.utils.formatEther(ethBalanceWei);
+
+        // USDT balance với timeout
+        let usdtFormatted = '0';
+        try {
+          const usdtContract = new ethers.Contract(CONTRACT_ADDRESSES.USDT, ERC20_ABI, freshProvider);
+          const [usdtBalanceRaw, decimals] = await withTimeout(
+            Promise.all([
+              usdtContract.balanceOf(connection.address!),
+              usdtContract.decimals(),
+            ])
+          );
+          usdtFormatted = ethers.utils.formatUnits(usdtBalanceRaw, decimals);
+        } catch (tokenErr: any) {
+          console.warn('[refreshBalances] USDT fetch skipped:', tokenErr?.code || tokenErr?.message);
+        }
+
+        setBalances({ eth: ethFormatted, usdt: usdtFormatted, isLoading: false });
+        console.log('[refreshBalances] ✓ ETH:', ethFormatted, '| USDT:', usdtFormatted);
+
+      } catch (err: any) {
+        const code = err?.code ?? 'UNKNOWN';
+
+        // SERVER_ERROR / TIMEOUT → thử lại 1 lần sau 1.5s
+        if ((code === 'SERVER_ERROR' || code === 'TIMEOUT') && retryCount === 0) {
+          console.warn(`[refreshBalances] ${code} — retrying in 1.5s...`);
+          await new Promise(r => setTimeout(r, 1500));
+          return doFetch(1); // retry 1 lần
+        }
+
+        // Sau retry vẫn lỗi → log warn (không phải error)
+        console.warn(
+          '[refreshBalances] Cannot reach Ganache after retry.\n' +
+          `  code: ${code}\n` +
+          `  url:  ${CURRENT_CHAIN.rpcUrl}\n` +
+          '  → USB: adb reverse tcp:7545 tcp:7545\n' +
+          '  → WiFi: đổi rpcUrl về 192.168.x.x:7545'
+        );
+        setBalances(prev => ({ ...prev, isLoading: false }));
+      }
+    };
+
+    try {
+      await doFetch();
+    } finally {
+      isRefreshingRef.current = false;
     }
-  }, [connection.address, fetchBalances]);
+  }, [connection.address]);
 
   // =====================
   // LOAD SAVED SESSION
@@ -651,9 +719,8 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
       console.log('Gas used:', receipt.gasUsed.toString());
       console.log('=== TRANSACTION COMPLETE ===\n');
 
-      // Refresh balances
-      await refreshBalances();
-
+      // TX thành công — KHÔNG tự refresh ở đây
+      // (Màn hình gọi tự refresh sau khi toàn bộ flow hoàn tất)
       return txResponse.hash;
     } catch (err: any) {
       console.error('Transaction failed:', err);
@@ -707,11 +774,11 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
 
       // Lấy decimals
       const decimals = await usdtContract.decimals();
-      
+
       // Kiểm tra số dư
       const balance = await usdtContract.balanceOf(connection.address);
       const amountInWei = ethers.utils.parseUnits(amount, decimals);
-      
+
       if (balance.lt(amountInWei)) {
         const balanceFormatted = ethers.utils.formatUnits(balance, decimals);
         Alert.alert(
@@ -724,10 +791,10 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
       // Gửi USDT transfer
       console.log('📤 Sending USDT transfer...');
       const txResponse = await usdtContract.transfer(toAddress, amountInWei);
-      
+
       console.log('TX Hash:', txResponse.hash);
       console.log('⏳ Waiting for confirmation...');
-      
+
       const receipt = await txResponse.wait(1);
       console.log('✅ USDT transfer confirmed! Block:', receipt.blockNumber);
       console.log('=== USDT TRANSFER COMPLETE ===\n');
