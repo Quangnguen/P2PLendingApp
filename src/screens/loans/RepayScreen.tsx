@@ -49,7 +49,7 @@ type RepayScreenProps = {
 
 const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
-  const { balances, connection, sendUSDT, sendTransaction, refreshBalances } = useWeb3();
+  const { balances, connection, sendUSDT, sendTransaction, refreshBalances, getProvider } = useWeb3();
   const { loanId } = route.params;
   const toast = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -144,6 +144,7 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
     setIsLoading(true);
     try {
       let txHash = null;
+      let actualRepayAmount = parseFloat(totalRepayment); // sẽ được cập nhật bằng on-chain value
 
       if (loan.loanContractAddress && ethers.utils.isAddress(loan.loanContractAddress)) {
         // LUỒNG CHUẨN BLOCKCHAIN
@@ -163,6 +164,8 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
         let onChainTotal: ethers.BigNumber;
         try {
           onChainTotal = await loanContract.getTotalRepaymentAmount();
+          // Dùng on-chain total để gửi backend (chính xác hơn off-chain)
+          actualRepayAmount = parseFloat(ethers.utils.formatUnits(onChainTotal, 6));
         } catch {
           // Fallback về off-chain nếu không đọc được contract
           onChainTotal = ethers.utils.parseUnits(totalRepayment, 6);
@@ -203,14 +206,14 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
           gasLimit: 400000, // repay: ~180k gas + withdrawCollateral ~60k = ~240k, dùng 400k để an toàn
         });
       } else {
-        // LUỒNG CŨ - Khoản vay không có smart contract riêng
-        setRepayStep('Đang chuyển USDT trên blockchain...');
-        if (!loan.lenderWallet) {
-          toast.error('Người cho vay chưa liên kết ví nhận thanh toán.', 'Lỗi');
-          setIsLoading(false);
-          return;
-        }
-        txHash = await sendUSDT(loan.lenderWallet, totalRepayment);
+        // Không có loanContractAddress → không thể gọi repay() on-chain
+        // ETH collateral sẽ KHÔNG được hoàn trả tự động nếu dùng sendUSDT trực tiếp
+        toast.error(
+          'Khoản vay chưa có địa chỉ hợp đồng thông minh. Vui lòng liên hệ hỗ trợ để hoàn trả tài sản thế chấp.',
+          'Không thể trả nợ tự động'
+        );
+        setIsLoading(false);
+        return;
       }
 
       if (!txHash) {
@@ -224,28 +227,25 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
       const { loanApi } = await import('@/api/loan.api');
       await loanApi.repayLoan(loanId, {
         txHash,
-        amount: parseFloat(totalRepayment),
+        amount: actualRepayAmount, // dùng on-chain total cho chính xác
       });
 
-      // Bước 3: Chờ Ganache mine block xong rồi mới refresh
-      // repay() → withdrawCollateral() → ETH transfer cần đủ thời gian
+      // Bước 3: Chờ tx được confirm rồi mới refresh balance
       setRepayStep('Đang cập nhật số dư ví...');
-      console.log('[Repay] Waiting 3s for Ganache to finalize ETH transfer...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // tăng lên 3s
+      const provider = getProvider();
+      if (provider && txHash) {
+        await provider.waitForTransaction(txHash, 1);
+      }
       await refreshBalances();
-      console.log('[Repay] Balances refreshed after repay');
 
       toast.success(
         `Đã trả ${formatCurrency(totalRepayment)} USDT thành công!\n` +
         `↳ ${loan.collateralAmount} ETH đã hoàn về ví của bạn.\n` +
         `Kiểm tra số dư trong tab Ví.\n\n` +
         `TX: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
-        'Trả nợ thành công ✅'
+        'Trả nợ thành công'
       );
       navigation.goBack();
-      // Refresh lần 2 sau khi quay lại màn hình trước
-      await new Promise(resolve => setTimeout(resolve, 500));
-      await refreshBalances();
     } catch (error: any) {
       const msg = error?.response?.data?.message || error.message || 'Không thể trả nợ. Vui lòng thử lại.';
       toast.error(msg, 'Lỗi');
@@ -311,7 +311,7 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
                 { color: overdue ? colors.redError : colors.textWhite },
               ]}
             >
-              {overdue ? '⚠️ Đã quá hạn!' : '⏰ Thời gian còn lại'}
+              {overdue ? 'Đã quá hạn!' : 'Thời gian còn lại'}
             </Text>
           </View>
           <Text
@@ -345,9 +345,10 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
 
         {/* Repayment Breakdown Card */}
         <Card style={styles.breakdownCard}>
-          <Text style={[styles.cardTitle, { color: colors.textWhite }]}>
-            📊 Chi tiết thanh toán
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <Ionicons name="receipt-outline" size={18} color={colors.accentBlue} />
+            <Text style={[styles.cardTitle, { color: colors.textWhite }]}>Chi tiết thanh toán</Text>
+          </View>
 
           <View style={styles.breakdownRow}>
             <Text style={[styles.breakdownLabel, { color: colors.textGray }]}>Tiền gốc</Text>
@@ -379,7 +380,10 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
           <View style={[styles.breakdownDivider, { backgroundColor: colors.darkBorder }]} />
 
           <View style={[styles.totalRow, { backgroundColor: colors.accentBlue + '15' }]}>
-            <Text style={[styles.totalLabel, { color: colors.textWhite }]}>💰 Tổng cần trả</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="cash-outline" size={16} color={colors.textWhite} />
+              <Text style={[styles.totalLabel, { color: colors.textWhite }]}>Tổng cần trả</Text>
+            </View>
             <Text style={[styles.totalValue, { color: colors.accentBlue }]}>
               {formatCurrency(totalRepayment)} USDT
             </Text>
@@ -388,7 +392,10 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
 
         {/* Wallet Balance Card */}
         <Card style={styles.walletCard}>
-          <Text style={[styles.cardTitle, { color: colors.textWhite }]}>👛 Số dư ví</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <Ionicons name="wallet-outline" size={18} color={colors.accentBlue} />
+            <Text style={[styles.cardTitle, { color: colors.textWhite }]}>Số dư ví</Text>
+          </View>
 
           <View style={styles.walletRow}>
             <View style={styles.walletItem}>
@@ -429,9 +436,10 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
         {/* Open Banking QR Payment Card */}
         {qrData && qrData.qrAvailable && (
           <Card style={styles.breakdownCard}>
-            <Text style={[styles.cardTitle, { color: colors.textWhite }]}>
-              🏦 Trả nợ qua Ngân hàng (Open Banking)
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <Ionicons name="business-outline" size={18} color={colors.accentBlue} />
+              <Text style={[styles.cardTitle, { color: colors.textWhite }]}>Trả nợ qua Ngân hàng (Open Banking)</Text>
+            </View>
 
             <View style={[styles.qrBankInfo, { backgroundColor: colors.accentBlue + '10' }]}>
               <View style={styles.qrBankRow}>
@@ -516,9 +524,10 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
       {showConfirm && (
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.darkSurface }]}>
-            <Text style={[styles.modalTitle, { color: colors.textWhite }]}>
-              📋 Xác nhận trả nợ
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <Ionicons name="document-text-outline" size={20} color={colors.accentBlue} />
+              <Text style={[styles.modalTitle, { color: colors.textWhite }]}>Xác nhận trả nợ</Text>
+            </View>
 
             <View style={styles.modalBody}>
               <ModalRow label="Số tiền gốc" value={`${formatCurrency(loan.amount)} USDT`} />
@@ -533,7 +542,7 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
 
             <View style={[styles.modalWarning, { backgroundColor: colors.yellowWarning + '15' }]}>
               <Text style={[styles.modalWarningText, { color: colors.yellowWarning }]}>
-                ⚠️ Giao dịch blockchain không thể hoàn tác sau khi xác nhận.
+                Giao dịch blockchain không thể hoàn tác sau khi xác nhận.
               </Text>
             </View>
 

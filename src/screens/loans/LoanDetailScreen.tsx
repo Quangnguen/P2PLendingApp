@@ -213,7 +213,7 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
   // Handle delete/cancel loan request
   const handleDelete = () => {
     Alert.alert(
-      '⚠️ Xác nhận xóa',
+      'Xác nhận xóa',
       'Bạn có chắc muốn xóa yêu cầu vay này? Hành động này không thể hoàn tác.',
       [
         { text: 'Hủy', style: 'cancel' },
@@ -225,12 +225,12 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
             try {
               const { loanApi } = await import('@/api/loan.api');
               await loanApi.deleteRequest(loanId);
-              Alert.alert('✅ Thành công', 'Đã xóa yêu cầu vay.', [
+              Alert.alert('Thành công', 'Đã xóa yêu cầu vay.', [
                 { text: 'OK', onPress: () => navigation.goBack() },
               ]);
             } catch (error: any) {
               const msg = error?.response?.data?.message || 'Không thể xóa yêu cầu vay';
-              Alert.alert('❌ Lỗi', msg);
+              Alert.alert('Lỗi', msg);
             } finally {
               setIsDeleting(false);
             }
@@ -324,7 +324,7 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
       return (
         <View style={[styles.footer, { backgroundColor: colors.darkBackground, borderTopColor: colors.darkBorder }]}>
           <Button
-            title="💰 Trả nợ"
+            title="Trả nợ"
             onPress={handleRepay}
             style={styles.investButton}
           />
@@ -337,7 +337,7 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
       return (
         <View style={[styles.footer, { backgroundColor: colors.darkBackground, borderTopColor: colors.darkBorder }]}>
           <Button
-            title="🚀 Đầu tư ngay"
+            title="Đầu tư ngay"
             onPress={handleInvest}
             style={styles.investButton}
           />

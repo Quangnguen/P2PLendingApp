@@ -110,7 +110,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
           navigation.navigate('LoginOtpVerification', { email: loginEmail });
         } else {
           toast.success('Đăng nhập thành công!', 'Chào mừng bạn');
-          navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
         }
       } else {
         toast.error(resultAction.payload as string || 'Đăng nhập thất bại', 'Lỗi');
@@ -159,7 +158,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
       />
       <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.keyboardView}
         >
           <ScrollView

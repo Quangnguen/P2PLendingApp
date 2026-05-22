@@ -441,6 +441,13 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
           chainId: CURRENT_CHAIN.id,
         }));
 
+        // Sync lên MongoDB — để lender biết borrower wallet khi cấp vốn
+        try {
+          await authApi.updateWallet(targetAddress);
+        } catch {
+          // offline hoặc chưa login — bỏ qua, selectWallet sẽ sync lại sau
+        }
+
         console.log('💰 Balances loaded:', balanceCheck, 'for', targetAddress);
       } catch (err) {
         console.error('Error loading saved session:', err);

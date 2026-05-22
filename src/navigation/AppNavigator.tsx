@@ -7,6 +7,7 @@ import { useAppDispatch, useAuth, checkAuth, hydrateConnectionsFromCache, loadCo
 import { useTheme } from '../providers';
 import { RootStackParamList, BottomTabParamList } from './types';
 import { Loading } from '../components/common';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 // Screens
 import { OnboardingScreen } from '../screens/onboarding';
@@ -47,8 +48,8 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<BottomTabParamList>();
 
 // Tab Bar Icon Component - Gets colors from useTheme
-const TabBarIcon: React.FC<{ icon: string; focused: boolean }> = ({
-  icon,
+const TabBarIcon: React.FC<{ name: string; focused: boolean }> = ({
+  name,
   focused,
 }) => {
   const { colors } = useTheme();
@@ -59,7 +60,11 @@ const TabBarIcon: React.FC<{ icon: string; focused: boolean }> = ({
         focused && { backgroundColor: colors.accentBlue + '20' },
       ]}
     >
-      <Text style={[styles.tabIcon, focused && styles.tabIconActive]}>{icon}</Text>
+      <Icon 
+        name={focused ? name : `${name}-outline`} 
+        size={24} 
+        color={focused ? colors.accentBlue : colors.textGray} 
+      />
     </View>
   );
 };
@@ -70,19 +75,19 @@ const MainTabs: React.FC = () => {
 
   // Tạo các icon render functions một lần
   const renderHomeIcon = useCallback(
-    ({ focused }: { focused: boolean }) => <TabBarIcon icon="🏠" focused={focused} />,
+    ({ focused }: { focused: boolean }) => <TabBarIcon name="home" focused={focused} />,
     []
   );
   const renderLoansIcon = useCallback(
-    ({ focused }: { focused: boolean }) => <TabBarIcon icon="💰" focused={focused} />,
+    ({ focused }: { focused: boolean }) => <TabBarIcon name="cash" focused={focused} />,
     []
   );
   const renderWalletIcon = useCallback(
-    ({ focused }: { focused: boolean }) => <TabBarIcon icon="👛" focused={focused} />,
+    ({ focused }: { focused: boolean }) => <TabBarIcon name="wallet" focused={focused} />,
     []
   );
   const renderProfileIcon = useCallback(
-    ({ focused }: { focused: boolean }) => <TabBarIcon icon="👤" focused={focused} />,
+    ({ focused }: { focused: boolean }) => <TabBarIcon name="person" focused={focused} />,
     []
   );
 
@@ -238,7 +243,16 @@ const AppNavigator: React.FC = () => {
             
             {/* Wallet Screens */}
             <Stack.Screen name="TransactionHistory" component={TransactionHistoryScreen} />
-            <Stack.Screen name="WalletSelect" component={WalletSelectScreen} />
+            <Stack.Screen
+              name="WalletSelect"
+              component={WalletSelectScreen}
+              options={{
+                presentation: 'transparentModal',
+                animation: 'slide_from_bottom',
+                headerShown: false,
+                contentStyle: { backgroundColor: 'transparent' },
+              }}
+            />
 
             {/* Profile Screens */}
             <Stack.Screen name="PersonalInfo" component={PersonalInfoScreen} />
@@ -271,12 +285,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  tabIcon: {
-    fontSize: 22,
-  },
-  tabIconActive: {
-    fontSize: 24,
   },
 });
 

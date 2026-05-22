@@ -1,10 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   FlatList,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -28,14 +29,34 @@ interface LoanItem {
   title: string;
   amount: number;
   interestRate: number;
-  status: 'pending' | 'active' | 'completed' | 'rejected';
+  status: 'pending' | 'approved' | 'active' | 'completed' | 'rejected';
   dueDate: Date;
   borrower?: string;
   lender?: string;
 }
 
+type StatusFilter = LoanItem['status'] | 'all';
+
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: 'all', label: 'Tất cả' },
+  { key: 'pending', label: 'Đang chờ' },
+  { key: 'approved', label: 'Đã duyệt' },
+  { key: 'active', label: 'Hoạt động' },
+  { key: 'completed', label: 'Hoàn thành' },
+  { key: 'rejected', label: 'Đã hủy' },
+];
+
+const toNum = (val: any): number => {
+  if (val == null) return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') return parseFloat(val) || 0;
+  if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+  return parseFloat(String(val)) || 0;
+};
+
 const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState<TabType>('borrowing');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const { colors } = useTheme();
   const { user } = useAuth();
   const { connections } = useOpenBanking();
@@ -43,14 +64,9 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
   const [lendingLoans, setLendingLoans] = useState<LoanItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Helper: Safely convert MongoDB Decimal128 to number
-  const toNum = (val: any): number => {
-    if (val == null) return 0;
-    if (typeof val === 'number') return val;
-    if (typeof val === 'string') return parseFloat(val) || 0;
-    if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
-    return parseFloat(String(val)) || 0;
-  };
+  useEffect(() => {
+    setStatusFilter('all');
+  }, [activeTab]);
 
   // Fetch data from API - refresh mỗi khi screen được focus
   useFocusEffect(
@@ -84,7 +100,7 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
             title: `Vay ${req.purpose || 'cá nhân'} - ${toNum(req.loanAmount)} USDT`,
             amount: toNum(req.loanAmount),
             interestRate: toNum(req.interestRate),
-            status: req.status === 'pending' ? 'pending' : req.status === 'approved' ? 'pending' : req.status === 'cancelled' ? 'rejected' : 'pending',
+            status: req.status === 'approved' ? 'approved' : req.status === 'cancelled' ? 'rejected' : 'pending',
             dueDate: new Date(req.expiresAt || Date.now()),
             lender: 'Đang chờ',
           }));
@@ -135,10 +151,23 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
     }, [])
   );
 
+  const getFilterColor = (key: StatusFilter): string => {
+    switch (key) {
+      case 'pending':   return colors.yellowWarning;
+      case 'approved':  return '#60a5fa';
+      case 'active':    return colors.greenSuccess;
+      case 'completed': return colors.accentBlue;
+      case 'rejected':  return colors.redError;
+      default:          return colors.accentBlue;
+    }
+  };
+
   const getStatusColor = (status: LoanItem['status']) => {
     switch (status) {
       case 'pending':
         return colors.yellowWarning;
+      case 'approved':
+        return '#60a5fa';
       case 'active':
         return colors.greenSuccess;
       case 'completed':
@@ -153,7 +182,9 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
   const getStatusText = (status: LoanItem['status']) => {
     switch (status) {
       case 'pending':
-        return 'Đang chờ';
+        return 'Đang chờ duyệt';
+      case 'approved':
+        return 'Chờ giải ngân';
       case 'active':
         return 'Đang hoạt động';
       case 'completed':
@@ -165,139 +196,156 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
     }
   };
 
-  const renderLoanItem = ({ item }: { item: LoanItem }) => (
-    <Card
-      style={styles.loanCard}
-      onPress={() => navigation.navigate('LoanDetail', { loanId: item.id })}
-    >
-      <View style={styles.loanHeader}>
-        <Text style={[styles.loanTitle, { color: colors.textWhite }]} numberOfLines={1}>{item.title}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-            {getStatusText(item.status)}
-          </Text>
+  const renderLoanItem = ({ item }: { item: LoanItem }) => {
+    const statusColor = getStatusColor(item.status);
+    return (
+      <TouchableOpacity
+        style={[styles.loanCard, { backgroundColor: colors.darkSurface, borderColor: colors.darkBorder, borderLeftColor: statusColor }]}
+        onPress={() => navigation.navigate('LoanDetail', { loanId: item.id })}
+        activeOpacity={0.85}
+      >
+        <View style={styles.loanTop}>
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <Text style={[styles.loanTitle, { color: colors.textGray }]} numberOfLines={1}>{item.title}</Text>
+            <Text style={[styles.loanAmount, { color: colors.textWhite }]}>
+              {item.amount.toLocaleString()} <Text style={[styles.loanAmountUnit, { color: colors.textGray }]}>USDT</Text>
+            </Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[styles.statusText, { color: statusColor }]}>{getStatusText(item.status)}</Text>
+          </View>
         </View>
-      </View>
-
-      <View style={styles.loanAmount}>
-        <Text style={[styles.amountLabel, { color: colors.textGray }]}>Số tiền</Text>
-        <Text style={[styles.amountValue, { color: colors.accentBlue }]}>{item.amount} USDT</Text>
-      </View>
-
-      <View style={[styles.loanDetails, { borderTopColor: colors.darkBorder }]}>
-        <View style={styles.detailItem}>
-          <Text style={[styles.detailLabel, { color: colors.textGray }]}>Lãi suất</Text>
-          <Text style={[styles.detailValue, { color: colors.textWhite }]}>{item.interestRate}%/năm</Text>
+        <View style={[styles.loanBottom, { borderTopColor: colors.darkBorder }]}>
+          <View style={styles.loanMeta}>
+            <Text style={[styles.metaLabel, { color: colors.textGray }]}>Lãi suất</Text>
+            <Text style={[styles.metaValue, { color: colors.textWhite }]}>{item.interestRate}%/năm</Text>
+          </View>
+          <View style={styles.loanMeta}>
+            <Text style={[styles.metaLabel, { color: colors.textGray }]}>Đáo hạn</Text>
+            <Text style={[styles.metaValue, { color: colors.textWhite }]}>{formatDate(item.dueDate)}</Text>
+          </View>
+          <View style={[styles.loanMeta, { flex: 1.2 }]}>
+            <Text style={[styles.metaLabel, { color: colors.textGray }]}>{activeTab === 'borrowing' ? 'Người cho vay' : 'Người vay'}</Text>
+            <Text style={[styles.metaValue, { color: colors.textWhite }]} numberOfLines={1}>{activeTab === 'borrowing' ? item.lender : item.borrower}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.textGray} />
         </View>
-        <View style={styles.detailItem}>
-          <Text style={[styles.detailLabel, { color: colors.textGray }]}>Ngày đáo hạn</Text>
-          <Text style={[styles.detailValue, { color: colors.textWhite }]}>{formatDate(item.dueDate)}</Text>
-        </View>
-        <View style={styles.detailItem}>
-          <Text style={[styles.detailLabel, { color: colors.textGray }]}>
-            {activeTab === 'borrowing' ? 'Người cho vay' : 'Người vay'}
-          </Text>
-          <Text style={[styles.detailValue, { color: colors.textWhite }]}>
-            {activeTab === 'borrowing' ? item.lender : item.borrower}
-          </Text>
-        </View>
-      </View>
-    </Card>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   const loans = activeTab === 'borrowing' ? borrowingLoans : lendingLoans;
+
+  const filteredLoans = useMemo(
+    () => statusFilter === 'all' ? loans : loans.filter(l => l.status === statusFilter),
+    [loans, statusFilter]
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.darkBackground }]} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.textWhite }]}>Khoản vay của tôi</Text>
+        <View>
+          <Text style={[styles.headerTitle, { color: colors.textWhite }]}>Khoản vay của tôi</Text>
+          <Text style={[styles.headerSub, { color: colors.textGray }]}>{loans.length} khoản vay</Text>
+        </View>
         <TouchableOpacity
           style={[styles.createButton, { backgroundColor: colors.accentBlue }]}
           onPress={() => {
             if (user?.kycStatus !== 'verified') {
-              Alert.alert(
-                'Yêu cầu xác thực',
-                'Bạn cần hoàn thành xác thực danh tính (KYC) trước khi tạo yêu cầu vay.',
-                [
-                  { text: 'Để sau', style: 'cancel' },
-                  { text: 'Xác thực ngay', onPress: () => navigation.navigate('KYCVerification' as any) }
-                ]
-              );
+              Alert.alert('Yêu cầu xác thực', 'Bạn cần hoàn thành xác thực danh tính (KYC) trước khi tạo yêu cầu vay.', [
+                { text: 'Để sau', style: 'cancel' },
+                { text: 'Xác thực ngay', onPress: () => navigation.navigate('KYCVerification' as any) },
+              ]);
               return;
             }
             if (connections.length === 0) {
-              Alert.alert(
-                'Yêu cầu liên kết ngân hàng',
-                'Bạn cần liên kết tài khoản ngân hàng để đảm bảo luồng trả nợ tự động.',
-                [
-                  { text: 'Để sau', style: 'cancel' },
-                  { text: 'Liên kết ngay', onPress: () => navigation.navigate('LinkBank' as any) }
-                ]
-              );
+              Alert.alert('Yêu cầu liên kết ngân hàng', 'Bạn cần liên kết tài khoản ngân hàng để đảm bảo luồng trả nợ tự động.', [
+                { text: 'Để sau', style: 'cancel' },
+                { text: 'Liên kết ngay', onPress: () => navigation.navigate('LinkBank' as any) },
+              ]);
               return;
             }
             navigation.navigate('CreateLoan');
           }}
         >
-          <View style={styles.createButtonContent}>
-            <Ionicons name="add" size={18} color={colors.textWhite} />
-            <Text style={[styles.createButtonText, { color: colors.textWhite }]}>Tạo mới</Text>
-          </View>
+          <Ionicons name="add" size={18} color="#fff" />
+          <Text style={[styles.createButtonText, { color: '#fff' }]}>Tạo mới</Text>
         </TouchableOpacity>
       </View>
 
       {/* Tabs */}
       <View style={[styles.tabContainer, { backgroundColor: colors.darkSurface }]}>
-        <TouchableOpacity
-          style={[
-            styles.tab, 
-            activeTab === 'borrowing' && { backgroundColor: colors.accentBlue }
-          ]}
-          onPress={() => setActiveTab('borrowing')}
+        {(['borrowing', 'lending'] as TabType[]).map(tab => (
+          <TouchableOpacity
+            key={tab}
+            style={[styles.tab, activeTab === tab && { backgroundColor: colors.accentBlue }]}
+            onPress={() => setActiveTab(tab)}
+          >
+            <Text style={[styles.tabText, { color: activeTab === tab ? '#fff' : colors.textGray }]}>
+              {tab === 'borrowing' ? `Đang vay (${borrowingLoans.length})` : `Đang cho vay (${lendingLoans.length})`}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Filter chips */}
+      <View style={styles.filterWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterScroll}
+          contentContainerStyle={styles.filterContent}
         >
-          <Text style={[
-            styles.tabText, 
-            { color: activeTab === 'borrowing' ? colors.textWhite : colors.textGray }
-          ]}>
-            Đang vay ({borrowingLoans.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.tab, 
-            activeTab === 'lending' && { backgroundColor: colors.accentBlue }
-          ]}
-          onPress={() => setActiveTab('lending')}
-        >
-          <Text style={[
-            styles.tabText, 
-            { color: activeTab === 'lending' ? colors.textWhite : colors.textGray }
-          ]}>
-            Đang cho vay ({lendingLoans.length})
-          </Text>
-        </TouchableOpacity>
+          {STATUS_FILTERS.map(f => {
+            const isActive = statusFilter === f.key;
+            const chipColor = getFilterColor(f.key);
+            const count = f.key === 'all' ? loans.length : loans.filter(l => l.status === f.key).length;
+            return (
+              <TouchableOpacity
+                key={f.key}
+                onPress={() => setStatusFilter(f.key)}
+                activeOpacity={0.7}
+                style={[
+                  styles.filterChip,
+                  isActive
+                    ? { backgroundColor: chipColor + '22', borderColor: chipColor }
+                    : { backgroundColor: colors.darkSurface, borderColor: colors.darkBorder },
+                ]}
+              >
+                <Text style={[styles.filterChipLabel, { color: isActive ? chipColor : colors.textGray, fontWeight: isActive ? '600' : '400' }]}>
+                  {f.label}
+                </Text>
+                <View style={[styles.filterChipCount, { backgroundColor: isActive ? chipColor : colors.darkBackground }]}>
+                  <Text style={[styles.filterChipCountText, { color: isActive ? '#fff' : colors.textGray }]}>{count}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* Summary */}
-      <View style={[styles.summaryContainer, { backgroundColor: colors.darkSurface }]}>
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryLabel, { color: colors.textGray }]}>Tổng số tiền</Text>
-          <Text style={[styles.summaryValue, { color: colors.textWhite }]}>
-            {formatCurrency(loans.reduce((sum, loan) => sum + loan.amount, 0))}
+      <View style={styles.summaryRow}>
+        <View style={[styles.summaryCard, { backgroundColor: colors.darkSurface }]}>
+          <Ionicons name="cash-outline" size={22} color={colors.accentBlue} style={{ marginBottom: 6 }} />
+          <Text style={[styles.summaryValue, { color: colors.textWhite }]} numberOfLines={1}>
+            {filteredLoans.reduce((s, l) => s + l.amount, 0).toLocaleString()}
           </Text>
+          <Text style={[styles.summaryLabel, { color: colors.textGray }]}>USDT · Tổng tiền</Text>
         </View>
-        <View style={[styles.summaryDivider, { backgroundColor: colors.darkBorder }]} />
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryLabel, { color: colors.textGray }]}>Số khoản vay</Text>
-          <Text style={[styles.summaryValue, { color: colors.textWhite }]}>{loans.length}</Text>
+        <View style={[styles.summaryCard, { backgroundColor: colors.darkSurface }]}>
+          <Ionicons name="document-text-outline" size={22} color={colors.greenSuccess} style={{ marginBottom: 6 }} />
+          <Text style={[styles.summaryValue, { color: colors.textWhite }]}>{filteredLoans.length}</Text>
+          <Text style={[styles.summaryLabel, { color: colors.textGray }]}>Khoản vay</Text>
         </View>
       </View>
 
       {/* Loan List */}
-      {loans.length > 0 ? (
+      {filteredLoans.length > 0 ? (
         <FlatList
-          data={loans}
+          data={filteredLoans}
           renderItem={renderLoanItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
@@ -305,18 +353,18 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
         />
       ) : (
         <View style={styles.emptyContainer}>
-          <Ionicons name="document-outline" size={64} color={colors.textGray} />
-          <Text style={[styles.emptyTitle, { color: colors.textWhite }]}>Chưa có khoản vay nào</Text>
+          <Ionicons name={statusFilter !== 'all' ? 'filter-outline' : 'document-outline'} size={56} color={colors.textGray} />
+          <Text style={[styles.emptyTitle, { color: colors.textWhite }]}>
+            {statusFilter !== 'all' ? 'Không có khoản vay phù hợp' : 'Chưa có khoản vay nào'}
+          </Text>
           <Text style={[styles.emptySubtitle, { color: colors.textGray }]}>
-            {activeTab === 'borrowing'
-              ? 'Bạn chưa có khoản vay nào. Tạo yêu cầu vay ngay!'
-              : 'Bạn chưa cho ai vay. Khám phá các yêu cầu vay!'}
+            {statusFilter !== 'all' ? 'Thử chọn bộ lọc khác' : activeTab === 'borrowing' ? 'Tạo yêu cầu vay ngay!' : 'Khám phá các yêu cầu vay!'}
           </Text>
           <TouchableOpacity
-            style={[styles.emptyButton, { backgroundColor: colors.accentBlue }]}
-            onPress={() => navigation.navigate('BrowseLoans')}
+            style={[styles.emptyButton, { backgroundColor: statusFilter !== 'all' ? colors.darkSurface : colors.accentBlue }]}
+            onPress={() => statusFilter !== 'all' ? setStatusFilter('all') : navigation.navigate('BrowseLoans')}
           >
-            <Text style={[styles.emptyButtonText, { color: colors.textWhite }]}>Khám phá ngay</Text>
+            <Text style={[styles.emptyButtonText, { color: '#fff' }]}>{statusFilter !== 'all' ? 'Xem tất cả' : 'Khám phá ngay'}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -325,152 +373,119 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
+  headerTitle: { fontSize: 22, fontWeight: 'bold' },
+  headerSub: { fontSize: 13, marginTop: 2 },
   createButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  createButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
     gap: 6,
   },
-  createButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  createButtonText: { fontSize: 14, fontWeight: '600' },
   tabContainer: {
     flexDirection: 'row',
     marginHorizontal: 20,
     borderRadius: 12,
     padding: 4,
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
+  tab: { flex: 1, paddingVertical: 11, alignItems: 'center', borderRadius: 10 },
+  tabText: { fontSize: 14, fontWeight: '600' },
+  filterWrapper: { height: 52, marginBottom: 14 },
+  filterScroll: { flex: 1 },
+  filterContent: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
     alignItems: 'center',
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    marginRight: 8,
+    gap: 6,
+  },
+  filterChipLabel: { fontSize: 13 },
+  filterChipCount: {
+    minWidth: 20,
+    height: 20,
     borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 5,
   },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  summaryContainer: {
+  filterChipCountText: { fontSize: 11, fontWeight: '600' },
+  summaryRow: {
     flexDirection: 'row',
     marginHorizontal: 20,
-    borderRadius: 12,
-    padding: 16,
+    gap: 12,
     marginBottom: 16,
   },
-  summaryItem: {
+  summaryCard: {
     flex: 1,
+    borderRadius: 16,
+    padding: 16,
     alignItems: 'center',
   },
-  summaryLabel: {
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  summaryValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  summaryDivider: {
-    width: 1,
-    marginHorizontal: 16,
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
-  },
+  summaryLabel: { fontSize: 12, marginTop: 2, textAlign: 'center' },
+  summaryValue: { fontSize: 20, fontWeight: 'bold' },
+  listContent: { paddingHorizontal: 20, paddingBottom: 100 },
   loanCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderLeftWidth: 4,
     marginBottom: 12,
+    overflow: 'hidden',
   },
-  loanHeader: {
+  loanTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    alignItems: 'flex-start',
+    padding: 16,
+    paddingBottom: 12,
   },
-  loanTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  loanTitle: { fontSize: 13, fontWeight: '500', marginBottom: 4 },
+  loanAmount: { fontSize: 22, fontWeight: 'bold' },
+  loanAmountUnit: { fontSize: 14, fontWeight: '400' },
   statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  loanAmount: {
-    marginBottom: 12,
-  },
-  amountLabel: {
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  amountValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  loanDetails: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    paddingTop: 12,
-  },
-  detailItem: {
-    flex: 1,
-  },
-  detailLabel: {
-    fontSize: 11,
-    marginBottom: 2,
-  },
-  detailValue: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  emptyContainer: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  emptyButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: 8,
+    gap: 5,
   },
-  emptyButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontSize: 12, fontWeight: '600' },
+  loanBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    gap: 8,
   },
+  loanMeta: { flex: 1 },
+  metaLabel: { fontSize: 11, marginBottom: 3 },
+  metaValue: { fontSize: 13, fontWeight: '500' },
+  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+  emptyTitle: { fontSize: 18, fontWeight: 'bold', marginTop: 16, marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, textAlign: 'center', marginBottom: 24 },
+  emptyButton: { paddingHorizontal: 28, paddingVertical: 12, borderRadius: 10 },
+  emptyButtonText: { fontSize: 15, fontWeight: '600' },
 });
 
 export default LoansScreen;

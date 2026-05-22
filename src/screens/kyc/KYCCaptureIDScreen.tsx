@@ -10,6 +10,8 @@ import {
   Modal,
   Animated,
   ScrollView,
+  Platform,
+  PermissionsAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -66,8 +68,27 @@ const KYCCaptureIDScreen: React.FC<KYCCaptureIDScreenProps> = ({
     });
   };
 
+  const ensureCameraPermission = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') return true;
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+      {
+        title: 'Cần quyền camera',
+        message: 'Ứng dụng cần quyền truy cập camera để chụp ảnh CCCD.',
+        buttonPositive: 'Đồng ý',
+        buttonNegative: 'Từ chối',
+      },
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  };
+
   // Chụp ảnh bằng camera
   const handleCapture = async () => {
+    const hasPermission = await ensureCameraPermission();
+    if (!hasPermission) {
+      toast.error('Cần cấp quyền camera để chụp ảnh', 'Thiếu quyền');
+      return;
+    }
     try {
       const result = await launchCamera({
         mediaType: 'photo',
@@ -362,7 +383,7 @@ const KYCCaptureIDScreen: React.FC<KYCCaptureIDScreenProps> = ({
                         { color: row.value ? colors.textWhite : '#ef4444' }
                       ]}
                     >
-                      {row.value || '⚠ Chưa đọc được'}
+                      {row.value || 'Chưa đọc được'}
                     </Text>
                   </View>
                   {row.value

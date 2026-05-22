@@ -86,7 +86,7 @@ const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation, r
       >
         {/* Success Message */}
         <View style={[styles.successCard, { backgroundColor: colors.greenSuccess + '15' }]}>
-          <Text style={styles.successIcon}>✅</Text>
+          <Ionicons name="checkmark-circle" size={28} color={colors.greenSuccess} style={{ marginRight: 12 }} />
           <View style={styles.successContent}>
             <Text style={[styles.successTitle, { color: colors.greenSuccess }]}>Trích xuất thông tin thành công</Text>
             <Text style={[styles.successSubtitle, { color: colors.textGray }]}>
@@ -132,7 +132,7 @@ const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation, r
             {frontImageUri ? (
               <Image source={{ uri: frontImageUri }} style={styles.previewImage} />
             ) : (
-              <Text style={styles.imagePreviewIcon}>🪪</Text>
+              <Ionicons name="id-card-outline" size={32} color={colors.textGray} />
             )}
             <Text style={[styles.imagePreviewLabel, { color: colors.textGray }]}>Mặt trước</Text>
           </View>
@@ -140,7 +140,7 @@ const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation, r
             {backImageUri ? (
               <Image source={{ uri: backImageUri }} style={styles.previewImage} />
             ) : (
-              <Text style={styles.imagePreviewIcon}>📱</Text>
+              <Ionicons name="phone-portrait-outline" size={32} color={colors.textGray} />
             )}
             <Text style={[styles.imagePreviewLabel, { color: colors.textGray }]}>Mặt sau</Text>
           </View>
@@ -148,7 +148,7 @@ const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation, r
 
         {/* Note */}
         <View style={[styles.noteCard, { backgroundColor: colors.accentBlue + '15' }]}>
-          <Text style={styles.noteIcon}>💡</Text>
+          <Ionicons name="bulb-outline" size={18} color={colors.accentBlue} style={{ marginRight: 10 }} />
           <Text style={[styles.noteText, { color: colors.textGray }]}>
             Nếu thông tin không chính xác, vui lòng chỉnh sửa trước khi tiếp tục.
             Bạn có thể chụp lại ảnh nếu cần.
@@ -210,7 +210,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   successIcon: {
-    fontSize: 24,
     marginRight: 12,
   },
   successContent: {
@@ -275,7 +274,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   imagePreviewIcon: {
-    fontSize: 32,
     marginBottom: 8,
   },
   imagePreviewLabel: {
@@ -288,8 +286,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   noteIcon: {
-    fontSize: 16,
-    marginRight: 12,
+    marginRight: 10,
   },
   noteText: {
     flex: 1,

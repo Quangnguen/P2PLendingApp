@@ -71,10 +71,6 @@ const LoginOtpVerificationScreen: React.FC<LoginOtpVerificationScreenProps> = ({
     
     if (verifyLoginOtp.fulfilled.match(resultAction)) {
       toast.success('Đăng nhập thành công!', 'Chào mừng bạn');
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Main' }],
-      });
     } else {
       toast.error(resultAction.payload as string || 'Xác thực thất bại', 'Lỗi');
     }

@@ -14,6 +14,7 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { LoanSummary, LoanStatus } from '../../types/loan.types';
 import { LOAN_STATUS_COLORS, LOAN_STATUS_TEXT } from '../../utils/constants';
 import {
@@ -78,20 +79,29 @@ const LoanCard: React.FC<LoanCardProps> = ({ loan, onPress, mode }) => {
       <View style={styles.body}>
         {/* Lãi suất */}
         <View style={styles.infoItem}>
-          <Text style={styles.infoLabel}>📊 Lãi suất</Text>
+          <View style={styles.infoLabelRow}>
+            <Ionicons name="trending-up-outline" size={12} color="#888" />
+            <Text style={styles.infoLabel}>Lãi suất</Text>
+          </View>
           <Text style={styles.infoValue}>{loan.interestRate}%/năm</Text>
         </View>
-        
+
         {/* Thời hạn */}
         <View style={styles.infoItem}>
-          <Text style={styles.infoLabel}>⏱️ Thời hạn</Text>
+          <View style={styles.infoLabelRow}>
+            <Ionicons name="time-outline" size={12} color="#888" />
+            <Text style={styles.infoLabel}>Thời hạn</Text>
+          </View>
           <Text style={styles.infoValue}>{loan.duration} ngày</Text>
         </View>
-        
+
         {/* Điểm tín dụng (chỉ hiện ở mode lender) */}
         {mode === 'lender' && (
           <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>⭐ Tín dụng</Text>
+            <View style={styles.infoLabelRow}>
+              <Ionicons name="star-outline" size={12} color="#888" />
+              <Text style={styles.infoLabel}>Tín dụng</Text>
+            </View>
             <Text style={[
               styles.infoValue,
               { color: loan.creditScore >= 650 ? '#10b981' : '#f59e0b' }
@@ -105,19 +115,25 @@ const LoanCard: React.FC<LoanCardProps> = ({ loan, onPress, mode }) => {
       {/* Footer: Thời gian còn lại hoặc ngày tạo */}
       <View style={styles.footer}>
         {loan.status === LoanStatus.ACTIVE && daysRemaining !== null ? (
-          <Text style={[
-            styles.footerText,
-            daysRemaining < 0 && styles.overdueText
-          ]}>
-            ⏰ {formatDaysRemaining(daysRemaining)}
-          </Text>
+          <View style={styles.footerLeft}>
+            <Ionicons name="alarm-outline" size={13} color={daysRemaining < 0 ? '#ef4444' : '#666'} />
+            <Text style={[styles.footerText, daysRemaining < 0 && styles.overdueText]}>
+              {' '}{formatDaysRemaining(daysRemaining)}
+            </Text>
+          </View>
         ) : (
-          <Text style={styles.footerText}>
-            📅 {new Date(loan.createdAt).toLocaleDateString('vi-VN')}
-          </Text>
+          <View style={styles.footerLeft}>
+            <Ionicons name="calendar-outline" size={13} color="#666" />
+            <Text style={styles.footerText}>
+              {' '}{new Date(loan.createdAt).toLocaleDateString('vi-VN')}
+            </Text>
+          </View>
         )}
-        
-        <Text style={styles.viewDetail}>Xem chi tiết →</Text>
+
+        <View style={styles.viewDetailRow}>
+          <Text style={styles.viewDetail}>Xem chi tiết</Text>
+          <Ionicons name="chevron-forward" size={14} color="#667eea" />
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -193,10 +209,15 @@ const styles = StyleSheet.create({
   infoItem: {
     alignItems: 'center',
   },
+  infoLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginBottom: 4,
+  },
   infoLabel: {
     fontSize: 11,
     color: '#888',
-    marginBottom: 4,
   },
   infoValue: {
     fontSize: 14,
@@ -211,6 +232,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
+  footerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   footerText: {
     fontSize: 12,
     color: '#666',
@@ -218,6 +243,11 @@ const styles = StyleSheet.create({
   overdueText: {
     color: '#ef4444',
     fontWeight: '600',
+  },
+  viewDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   viewDetail: {
     fontSize: 12,

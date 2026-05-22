@@ -9,7 +9,7 @@
  * - Danh sách khoản đầu tư với progress bar
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -47,21 +47,29 @@ interface InvestmentItem {
   progress: number; // 0-100 completion %
 }
 
+const getStatusText = (status: InvestmentItem['status']): string => {
+  switch (status) {
+    case 'active': return 'Đang hoạt động';
+    case 'completed': return 'Hoàn thành';
+    case 'defaulted': return 'Vỡ nợ';
+    default: return status;
+  }
+};
+
+const toNum = (val: any): number => {
+  if (val == null) return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') return parseFloat(val) || 0;
+  if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+  return parseFloat(String(val)) || 0;
+};
+
 const MyInvestmentsScreen: React.FC<MyInvestmentsScreenProps> = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState<TabType>('active');
   const [refreshing, setRefreshing] = useState(false);
   const { colors } = useTheme();
   const [investments, setInvestments] = useState<InvestmentItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Helper: Safely convert MongoDB Decimal128 to number
-  const toNum = (val: any): number => {
-    if (val == null) return 0;
-    if (typeof val === 'number') return val;
-    if (typeof val === 'string') return parseFloat(val) || 0;
-    if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
-    return parseFloat(String(val)) || 0;
-  };
 
   const fetchInvestments = useCallback(async () => {
     try {
@@ -112,40 +120,39 @@ const MyInvestmentsScreen: React.FC<MyInvestmentsScreenProps> = ({ navigation })
     fetchInvestments();
   }, [fetchInvestments]);
 
-  const filteredInvestments = investments.filter(inv => inv.status === activeTab);
+  // Single-pass derivation: filter + summary + tab counts in one useMemo
+  const { filteredInvestments, totalInvested, totalEarned, activePending, tabCounts } = useMemo(() => {
+    let invested = 0;
+    let earned = 0;
+    let pending = 0;
+    const counts = { active: 0, completed: 0, defaulted: 0 };
+    const filtered: InvestmentItem[] = [];
 
-  // Summary calculations
-  const totalInvested = investments.reduce((sum, inv) => sum + inv.amount, 0);
-  const totalEarned = investments
-    .filter(inv => inv.status === 'completed')
-    .reduce((sum, inv) => sum + (inv.actualReturn || 0) - inv.amount, 0);
-  const activePending = investments
-    .filter(inv => inv.status === 'active')
-    .reduce((sum, inv) => sum + inv.expectedReturn - inv.amount, 0);
+    for (const inv of investments) {
+      invested += inv.amount;
+      counts[inv.status] = (counts[inv.status] ?? 0) + 1;
+      if (inv.status === activeTab) filtered.push(inv);
+      if (inv.status === 'completed') earned += (inv.actualReturn || 0) - inv.amount;
+      if (inv.status === 'active') pending += inv.expectedReturn - inv.amount;
+    }
 
-  const tabCounts = {
-    active: investments.filter(i => i.status === 'active').length,
-    completed: investments.filter(i => i.status === 'completed').length,
-    defaulted: investments.filter(i => i.status === 'defaulted').length,
-  };
+    return {
+      filteredInvestments: filtered,
+      totalInvested: invested,
+      totalEarned: earned,
+      activePending: pending,
+      tabCounts: counts,
+    };
+  }, [investments, activeTab]);
 
-  const getStatusColor = (status: InvestmentItem['status']) => {
+  const getStatusColor = useCallback((status: InvestmentItem['status']): string => {
     switch (status) {
       case 'active': return colors.accentBlue;
       case 'completed': return colors.greenSuccess;
       case 'defaulted': return colors.redError;
       default: return colors.textGray;
     }
-  };
-
-  const getStatusText = (status: InvestmentItem['status']) => {
-    switch (status) {
-      case 'active': return 'Đang hoạt động';
-      case 'completed': return 'Hoàn thành';
-      case 'defaulted': return 'Vỡ nợ';
-      default: return status;
-    }
-  };
+  }, [colors]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -153,7 +160,7 @@ const MyInvestmentsScreen: React.FC<MyInvestmentsScreenProps> = ({ navigation })
     setRefreshing(false);
   }, [fetchInvestments]);
 
-  const renderInvestmentItem = ({ item }: { item: InvestmentItem }) => {
+  const renderInvestmentItem = useCallback(({ item }: { item: InvestmentItem }) => {
     const daysLeft = calculateDaysRemaining(item.dueDate.getTime());
     const profit = item.status === 'completed'
       ? (item.actualReturn || 0) - item.amount
@@ -253,7 +260,7 @@ const MyInvestmentsScreen: React.FC<MyInvestmentsScreenProps> = ({ navigation })
         )}
       </Card>
     );
-  };
+  }, [colors, navigation, getStatusColor, getStatusText]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.darkBackground }]} edges={['top']}>
@@ -325,6 +332,10 @@ const MyInvestmentsScreen: React.FC<MyInvestmentsScreenProps> = ({ navigation })
           keyExtractor={item => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={6}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accentBlue} />
           }

@@ -78,8 +78,8 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
         // Tính collateral ratio thực tế
         const loanAmount = toNum(reqData.loanAmount);
         const collateral = toNum(reqData.collateralAmount);
-        // Dùng giá ETH thống nhất 2500 USDT (khớp với CreateLoanScreen)
-        const ethPrice = 2500;
+        // Dùng giá ETH thống nhất 2000 USDT (khớp với CreateLoanScreen MOCK_ETH_PRICE)
+        const ethPrice = 2000;
         const collateralValueUSDT = collateral * ethPrice;
         const actualCollateralRatio = loanAmount > 0
           ? Math.round((collateralValueUSDT / loanAmount) * 100)
@@ -314,9 +314,10 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
 
         {/* Borrower Info Card */}
         <Card style={styles.borrowerCard}>
-          <Text style={[styles.cardTitle, { color: colors.textWhite }]}>
-            👤 Thông tin người vay
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <Ionicons name="person-outline" size={18} color={colors.accentBlue} />
+            <Text style={[styles.cardTitle, { color: colors.textWhite }]}>Thông tin người vay</Text>
+          </View>
 
           <View style={styles.borrowerRow}>
             <View style={[styles.borrowerAvatar, { backgroundColor: colors.accentBlue + '30' }]}>
@@ -375,9 +376,10 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
 
         {/* Risk Assessment Card */}
         <Card style={styles.riskCard}>
-          <Text style={[styles.cardTitle, { color: colors.textWhite }]}>
-            🛡️ Đánh giá rủi ro
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <Ionicons name="shield-checkmark-outline" size={18} color={colors.accentBlue} />
+            <Text style={[styles.cardTitle, { color: colors.textWhite }]}>Đánh giá rủi ro</Text>
+          </View>
 
           <View style={[styles.riskBadge, { backgroundColor: risk.color + '15' }]}>
             <Ionicons name={risk.icon as any} size={28} color={risk.color} />
@@ -522,9 +524,10 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
       {showConfirm && (
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.darkSurface }]}>
-            <Text style={[styles.modalTitle, { color: colors.textWhite }]}>
-              💰 Xác nhận cấp vốn
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <Ionicons name="cash-outline" size={20} color={colors.accentBlue} />
+              <Text style={[styles.modalTitle, { color: colors.textWhite }]}>Xác nhận cấp vốn</Text>
+            </View>
 
             <View style={styles.modalBody}>
               <ConfirmRow label="Số tiền cấp" value={`${formatCurrency(loanRequest.amount)} USDT`} />
@@ -537,7 +540,7 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
 
             <View style={[styles.modalWarning, { backgroundColor: colors.yellowWarning + '15' }]}>
               <Text style={[styles.modalWarningText, { color: colors.yellowWarning }]}>
-                ⚠️ Vốn sẽ bị khóa trong {loanRequest.duration} ngày. Giao dịch blockchain không thể hoàn tác.
+                Vốn sẽ bị khóa trong {loanRequest.duration} ngày. Giao dịch blockchain không thể hoàn tác.
               </Text>
             </View>
 

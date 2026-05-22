@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo, memo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   TextInput,
   Dimensions,
@@ -36,6 +37,100 @@ interface LoanRequest {
   funded: number;
 }
 
+interface LoanCardProps {
+  loan: LoanRequest;
+  risk: { label: string; color: string; desc: string };
+  colors: any;
+  onPress: () => void;
+}
+
+const LoanCard = memo<LoanCardProps>(({ loan, risk, colors, onPress }) => (
+  <TouchableOpacity activeOpacity={0.95} onPress={onPress}>
+    <Card style={[styles.loanCard, { backgroundColor: colors.darkSurface, borderColor: colors.darkBorder }]}>
+      <View style={styles.cardHeader}>
+        <View style={styles.borrowerRow}>
+          <View style={[styles.avatar, { backgroundColor: colors.accentBlue + '20' }]}>
+            <Text style={[styles.avatarText, { color: colors.accentBlue }]}>
+              {loan.borrowerName.charAt(0)}
+            </Text>
+          </View>
+          <View style={styles.borrowerInfo}>
+            <Text style={[styles.borrowerName, { color: colors.textWhite }]}>{loan.borrowerName}</Text>
+            <View style={styles.purposeTag}>
+              <Text style={[styles.purpose, { color: colors.textGray }]}>{loan.purpose}</Text>
+            </View>
+          </View>
+        </View>
+        <View style={[styles.riskBadge, { backgroundColor: risk.color + '15', borderColor: risk.color }]}>
+          <Text style={[styles.riskLabel, { color: risk.color }]}>Rủi ro: {risk.label}</Text>
+        </View>
+      </View>
+
+      <View style={styles.statsContainer}>
+        <View style={styles.statItem}>
+          <Text style={[styles.statLabel, { color: colors.textGray }]}>Số tiền</Text>
+          <Text style={[styles.statValue, { color: colors.textWhite }]}>
+            {formatCurrency(loan.amount).replace('.00', '')}
+          </Text>
+        </View>
+        <View style={[styles.statItem, styles.statBorder]}>
+          <Text style={[styles.statLabel, { color: colors.textGray }]}>Lợi nhuận</Text>
+          <Text style={[styles.statValue, { color: colors.greenSuccess }]}>{loan.interestRate}%</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={[styles.statLabel, { color: colors.textGray }]}>Kỳ hạn</Text>
+          <Text style={[styles.statValue, { color: colors.textWhite }]}>{loan.term} ngày</Text>
+        </View>
+      </View>
+
+      <View style={styles.progressSection}>
+        <View style={styles.progressInfo}>
+          <Text style={[styles.progressText, { color: colors.textGray }]}>Đã tài trợ: {loan.funded}%</Text>
+          <Text style={[styles.remainingText, { color: colors.accentBlue }]}>
+            Còn: {formatCurrency(loan.amount * (1 - loan.funded / 100)).replace('.00', '')}
+          </Text>
+        </View>
+        <View style={[styles.progressBarBg, { backgroundColor: colors.darkBackground }]}>
+          <LinearGradient
+            colors={[colors.accentBlue, '#3b82f6']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[styles.progressFill, { width: `${loan.funded}%` }]}
+          />
+        </View>
+      </View>
+
+      <View style={styles.cardFooter}>
+        <View style={styles.creditInfo}>
+          <Ionicons name="stats-chart" size={14} color={colors.textGray} />
+          <Text style={[styles.creditText, { color: colors.textGray }]}>Điểm tín dụng: {loan.creditScore}</Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.investAction, { backgroundColor: colors.accentBlue }]}
+          onPress={onPress}
+        >
+          <Text style={styles.investActionText}>Xem chi tiết</Text>
+          <Ionicons name="arrow-forward" size={16} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    </Card>
+  </TouchableOpacity>
+));
+
+const toNum = (val: any): number => {
+  if (val == null) return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') return parseFloat(val) || 0;
+  if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+  return parseFloat(String(val)) || 0;
+};
+
+const FILTERS = [
+  { key: 'all', label: 'Tất cả', icon: 'list' },
+  { key: 'low_risk', label: 'An toàn', icon: 'shield-checkmark' },
+  { key: 'high_return', label: 'Lợi nhuận', icon: 'trending-up' },
+] as const;
+
 const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'low_risk' | 'high_return'>('all');
@@ -43,15 +138,6 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
   const { user } = useAuth();
   const [loanRequests, setLoanRequests] = useState<LoanRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Helper: Safely convert MongoDB Decimal128 to number
-  const toNum = (val: any): number => {
-    if (val == null) return 0;
-    if (typeof val === 'number') return val;
-    if (typeof val === 'string') return parseFloat(val) || 0;
-    if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
-    return parseFloat(String(val)) || 0;
-  };
 
   // Fetch pending loan requests from API - refresh on focus
   useFocusEffect(
@@ -80,7 +166,7 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
               term: toNum(req.durationDays) || 30,
               purpose: req.purpose || 'Không rõ',
               creditScore: toNum(req.borrowerId?.creditScore) || 500,
-              funded: Math.floor(Math.random() * 40), // Mock funding progress for UI
+              funded: 0, // Backend chưa trả về funded %, mặc định 0
             }));
           setLoanRequests(requests);
         } catch (err) {
@@ -99,30 +185,38 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
     }, [user?._id])
   );
 
-  const filters = [
-    { key: 'all', label: 'Tất cả', icon: 'list' },
-    { key: 'low_risk', label: 'An toàn', icon: 'shield-checkmark' },
-    { key: 'high_return', label: 'Lợi nhuận', icon: 'trending-up' },
-  ];
-
-  const getRiskLevel = (score: number) => {
+  const getRiskLevel = useCallback((score: number) => {
     if (score >= 750) return { label: 'A', color: colors.greenSuccess, desc: 'Rất thấp' };
     if (score >= 680) return { label: 'B', color: colors.yellowWarning, desc: 'Trung bình' };
     return { label: 'C', color: colors.redError, desc: 'Cao' };
-  };
+  }, [colors]);
 
-  const filteredLoans = loanRequests.filter((loan) => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return (
-        loan.borrowerName.toLowerCase().includes(query) ||
-        loan.purpose.toLowerCase().includes(query)
-      );
-    }
-    if (selectedFilter === 'low_risk') return loan.creditScore >= 750;
-    if (selectedFilter === 'high_return') return loan.interestRate >= 14;
-    return true;
-  });
+  const renderLoanItem = useCallback(({ item: loan }: { item: LoanRequest }) => {
+    const risk = getRiskLevel(loan.creditScore);
+    return (
+      <LoanCard
+        loan={loan}
+        risk={risk}
+        colors={colors}
+        onPress={() => navigation.navigate('LoanDetail', { loanId: loan.id })}
+      />
+    );
+  }, [getRiskLevel, colors, navigation]);
+
+  const filteredLoans = useMemo(() => {
+    return loanRequests.filter((loan) => {
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        return (
+          loan.borrowerName.toLowerCase().includes(query) ||
+          loan.purpose.toLowerCase().includes(query)
+        );
+      }
+      if (selectedFilter === 'low_risk') return loan.creditScore >= 750;
+      if (selectedFilter === 'high_return') return loan.interestRate >= 14;
+      return true;
+    });
+  }, [loanRequests, searchQuery, selectedFilter]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.darkBackground }]} edges={['top']}>
@@ -171,7 +265,7 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filtersContainer}
         >
-          {filters.map((filter) => (
+          {FILTERS.map((filter) => (
             <TouchableOpacity
               key={filter.key}
               style={[
@@ -204,111 +298,36 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
       </View>
 
       {/* Loan List */}
-      <ScrollView
+      <FlatList
+        data={filteredLoans}
+        keyExtractor={item => item.id}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.resultsCount, { color: colors.textWhite }]}>
-            Khoản vay sẵn có ({filteredLoans.length})
-          </Text>
-          <TouchableOpacity>
-            <Text style={{ color: colors.accentBlue, fontSize: 13 }}>Sắp xếp</Text>
-          </TouchableOpacity>
-        </View>
-
-        {filteredLoans.length === 0 ? (
+        initialNumToRender={6}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews
+        ListHeaderComponent={
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.resultsCount, { color: colors.textWhite }]}>
+              Khoản vay sẵn có ({filteredLoans.length})
+            </Text>
+            <TouchableOpacity>
+              <Text style={{ color: colors.accentBlue, fontSize: 13 }}>Sắp xếp</Text>
+            </TouchableOpacity>
+          </View>
+        }
+        ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name="search-outline" size={64} color={colors.darkBorder} />
-            <Text style={[styles.emptyText, { color: colors.textGray }]}>Không tìm thấy khoản vay nào phù hợp</Text>
+            <Text style={[styles.emptyText, { color: colors.textGray }]}>
+              Không tìm thấy khoản vay nào phù hợp
+            </Text>
           </View>
-        ) : (
-          filteredLoans.map((loan) => {
-            const risk = getRiskLevel(loan.creditScore);
-            return (
-              <TouchableOpacity
-                key={loan.id}
-                activeOpacity={0.95}
-                onPress={() => navigation.navigate('LoanDetail', { loanId: loan.id })}
-              >
-                <Card style={[styles.loanCard, { backgroundColor: colors.darkSurface, borderColor: colors.darkBorder }]}>
-                  {/* Card Header: Borrower & Risk */}
-                  <View style={styles.cardHeader}>
-                    <View style={styles.borrowerRow}>
-                      <View style={[styles.avatar, { backgroundColor: colors.accentBlue + '20' }]}>
-                        <Text style={[styles.avatarText, { color: colors.accentBlue }]}>
-                          {loan.borrowerName.charAt(0)}
-                        </Text>
-                      </View>
-                      <View style={styles.borrowerInfo}>
-                        <Text style={[styles.borrowerName, { color: colors.textWhite }]}>{loan.borrowerName}</Text>
-                        <View style={styles.purposeTag}>
-                          <Text style={[styles.purpose, { color: colors.textGray }]}>{loan.purpose}</Text>
-                        </View>
-                      </View>
-                    </View>
-                    <View style={[styles.riskBadge, { backgroundColor: risk.color + '15', borderColor: risk.color }]}>
-                      <Text style={[styles.riskLabel, { color: risk.color }]}>Rủi ro: {risk.label}</Text>
-                    </View>
-                  </View>
-
-                  {/* Financial Stats */}
-                  <View style={styles.statsContainer}>
-                    <View style={styles.statItem}>
-                      <Text style={[styles.statLabel, { color: colors.textGray }]}>Số tiền</Text>
-                      <Text style={[styles.statValue, { color: colors.textWhite }]}>
-                        {formatCurrency(loan.amount).replace('.00', '')}
-                      </Text>
-                    </View>
-                    <View style={[styles.statItem, styles.statBorder]}>
-                      <Text style={[styles.statLabel, { color: colors.textGray }]}>Lợi nhuận</Text>
-                      <Text style={[styles.statValue, { color: colors.greenSuccess }]}>{loan.interestRate}%</Text>
-                    </View>
-                    <View style={styles.statItem}>
-                      <Text style={[styles.statLabel, { color: colors.textGray }]}>Kỳ hạn</Text>
-                      <Text style={[styles.statValue, { color: colors.textWhite }]}>{loan.term} ngày</Text>
-                    </View>
-                  </View>
-
-                  {/* Funding Progress */}
-                  <View style={styles.progressSection}>
-                    <View style={styles.progressInfo}>
-                      <Text style={[styles.progressText, { color: colors.textGray }]}>Đã tài trợ: {loan.funded}%</Text>
-                      <Text style={[styles.remainingText, { color: colors.accentBlue }]}>
-                        Còn: {formatCurrency(loan.amount * (1 - loan.funded / 100)).replace('.00', '')}
-                      </Text>
-                    </View>
-                    <View style={[styles.progressBarBg, { backgroundColor: colors.darkBackground }]}>
-                      <LinearGradient
-                        colors={[colors.accentBlue, '#3b82f6']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={[styles.progressFill, { width: `${loan.funded}%` }]}
-                      />
-                    </View>
-                  </View>
-
-                  {/* Footer Action */}
-                  <View style={styles.cardFooter}>
-                    <View style={styles.creditInfo}>
-                      <Ionicons name="stats-chart" size={14} color={colors.textGray} />
-                      <Text style={[styles.creditText, { color: colors.textGray }]}>Điểm tín dụng: {loan.creditScore}</Text>
-                    </View>
-                    <TouchableOpacity 
-                      style={[styles.investAction, { backgroundColor: colors.accentBlue }]}
-                      onPress={() => navigation.navigate('LoanDetail', { loanId: loan.id })}
-                    >
-                      <Text style={styles.investActionText}>Xem chi tiết</Text>
-                      <Ionicons name="arrow-forward" size={16} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                </Card>
-              </TouchableOpacity>
-            );
-          })
-        )}
-      </ScrollView>
+        }
+        renderItem={renderLoanItem}
+      />
     </SafeAreaView>
   );
 };

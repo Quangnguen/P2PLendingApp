@@ -88,6 +88,7 @@ const CreateLoanScreen: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [creatingStep, setCreatingStep] = useState('');
   const [dynamicRatio, setDynamicRatio] = useState(150);
+  const [onChainRatioForDisplay, setOnChainRatioForDisplay] = useState<number | null>(null);
 
   // =====================
   // ON-CHAIN QUERY HELPERS
@@ -125,24 +126,36 @@ const CreateLoanScreen: React.FC = () => {
     }
   }, [creditScore, user?._id, dispatch]);
 
+  // Fetch on-chain collateral ratio khi có địa chỉ ví để preview khớp với giao dịch thực tế
+  useEffect(() => {
+    if (connection.address) {
+      getOnChainCollateralRatio(connection.address).then(r => setOnChainRatioForDisplay(r));
+    }
+  }, [connection.address]);
+
   useEffect(() => {
     if (amount && interestRate) {
       // Logic tỉ lệ thế chấp động theo điểm tín dụng đồng bộ với Backend
-      let ratio = 190; // Default (POOR)
-      if (realCreditScore >= 800) ratio = 135;
-      else if (realCreditScore >= 700) ratio = 145;
-      else if (realCreditScore >= 600) ratio = 155;
-      else if (realCreditScore >= 500) ratio = 165;
-      else if (realCreditScore >= 400) ratio = 175;
+      let offlineRatio = 190; // Default (POOR)
+      if (realCreditScore >= 800) offlineRatio = 135;
+      else if (realCreditScore >= 700) offlineRatio = 145;
+      else if (realCreditScore >= 600) offlineRatio = 155;
+      else if (realCreditScore >= 500) offlineRatio = 165;
+      else if (realCreditScore >= 400) offlineRatio = 175;
 
-      setDynamicRatio(ratio);
+      setDynamicRatio(offlineRatio);
 
-      const collateral = calculateRequiredCollateral(
+      // Ưu tiên on-chain ratio (chính xác hơn) nếu đã fetch được
+      const ratio = onChainRatioForDisplay ?? offlineRatio;
+
+      const collateralRaw = calculateRequiredCollateral(
         amount,
         MOCK_ETH_PRICE,
         ratio
       );
-      setRequiredCollateral(collateral);
+      // Hiển thị số đã cộng buffer 1% để preview = số thực tế giao dịch
+      const collateralWithBuffer = (parseFloat(collateralRaw) * COLLATERAL_BUFFER_PCT).toFixed(6);
+      setRequiredCollateral(collateralWithBuffer);
       const interest = calculateInterest(amount, parseFloat(interestRate), duration);
       setInterestAmount(interest);
       const total = calculateRepaymentAmount(amount, parseFloat(interestRate), duration);
@@ -152,7 +165,7 @@ const CreateLoanScreen: React.FC = () => {
       setInterestAmount('0');
       setTotalRepayment('0');
     }
-  }, [amount, duration, interestRate, realCreditScore]);
+  }, [amount, duration, interestRate, realCreditScore, onChainRatioForDisplay]);
 
   useEffect(() => {
     const score = realCreditScore > 0 ? realCreditScore : 650; // fallback 650 nếu chưa có điểm
@@ -373,7 +386,7 @@ const CreateLoanScreen: React.FC = () => {
     return (
       <View style={styles.previewOverlay}>
         <View style={styles.previewModal}>
-          <Text style={styles.previewTitle}>📋 Xác nhận yêu cầu vay</Text>
+          <Text style={styles.previewTitle}>Xác nhận yêu cầu vay</Text>
           <View style={styles.previewContent}>
             <PreviewRow label="Số tiền vay" value={`${formatCurrency(amount)} USDT`} />
             <PreviewRow label="Thời hạn" value={`${duration} ngày`} />
@@ -385,7 +398,7 @@ const CreateLoanScreen: React.FC = () => {
           </View>
           <View style={styles.previewWarning}>
             <Text style={styles.previewWarningText}>
-              ⚠️ ETH sẽ bị khóa làm tài sản thế chấp cho đến khi bạn trả nợ
+              ETH sẽ bị khóa làm tài sản thế chấp cho đến khi bạn trả nợ
             </Text>
           </View>
           <View style={styles.previewButtons}>
@@ -456,7 +469,7 @@ const CreateLoanScreen: React.FC = () => {
           <View style={styles.formCard}>
             {/* Số tiền vay */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>💰 Số tiền muốn vay (USDT)</Text>
+              <Text style={styles.inputLabel}>Số tiền muốn vay (USDT)</Text>
               <View style={styles.inputWrapper}>
                 <TextInput
                   style={styles.input}
@@ -477,7 +490,7 @@ const CreateLoanScreen: React.FC = () => {
 
             {/* Thời hạn vay */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>⏱️ Thời hạn vay</Text>
+              <Text style={styles.inputLabel}>Thời hạn vay</Text>
               <View style={styles.durationContainer}>
                 {LOAN_CONFIG.DURATION_OPTIONS.map(opt => renderDurationChip(opt.value, opt.label))}
               </View>
@@ -485,7 +498,7 @@ const CreateLoanScreen: React.FC = () => {
 
             {/* Lãi suất */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>📊 Lãi suất đề xuất (%/năm)</Text>
+              <Text style={styles.inputLabel}>Lãi suất đề xuất (%/năm)</Text>
               <View style={styles.inputWrapper}>
                 <TextInput
                   style={styles.input}
@@ -505,7 +518,7 @@ const CreateLoanScreen: React.FC = () => {
           {/* Tính toán */}
           {amount && interestRate && (
             <View style={styles.calculationCard}>
-              <Text style={styles.calculationTitle}>📊 Tính toán</Text>
+              <Text style={styles.calculationTitle}>Tính toán</Text>
               <View style={styles.calculationRow}>
                 <Text style={styles.calculationLabel}>Tiền lãi ({duration} ngày)</Text>
                 <Text style={styles.calculationValue}>{formatCurrency(interestAmount)} USDT</Text>

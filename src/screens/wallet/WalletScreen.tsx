@@ -13,6 +13,7 @@ import {
   Linking,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useWeb3 } from '../../providers';
 import { GANACHE_ACCOUNTS } from '@/config/walletconnect';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -62,7 +63,7 @@ const WalletScreen: React.FC = () => {
   // Xác nhận ngắt kết nối
   const handleDisconnect = () => {
     Alert.alert(
-      '🔌 Ngắt kết nối',
+      'Ngắt kết nối',
       'Bạn có chắc muốn ngắt kết nối ví không?',
       [
         { text: 'Hủy', style: 'cancel' },
@@ -86,7 +87,7 @@ const WalletScreen: React.FC = () => {
       await Linking.openURL(metamaskUrl);
     } else {
       Alert.alert(
-        '🦊 MetaMask chưa cài đặt',
+        'MetaMask chưa cài đặt',
         'Bạn cần cài đặt MetaMask để sử dụng',
         [
           { text: 'Hủy', style: 'cancel' },
@@ -117,7 +118,7 @@ const WalletScreen: React.FC = () => {
       <ScrollView style={styles.container} contentContainerStyle={styles.centerContent}>
         <View style={styles.heroSection}>
           <View style={styles.walletIconLarge}>
-            <Text style={styles.walletEmoji}>👛</Text>
+            <Ionicons name="wallet-outline" size={40} color="#667eea" />
           </View>
           <Text style={styles.heroTitle}>Kết nối Ví của bạn</Text>
           <Text style={styles.heroSubtitle}>
@@ -134,7 +135,7 @@ const WalletScreen: React.FC = () => {
             <ActivityIndicator color="#fff" size="small" />
           ) : (
             <>
-              <Text style={styles.primaryButtonIcon}>🔗</Text>
+              <Ionicons name="link-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.primaryButtonText}>Kết nối Ví</Text>
             </>
           )}
@@ -144,18 +145,24 @@ const WalletScreen: React.FC = () => {
           style={styles.metamaskButton}
           onPress={openMetaMask}
           activeOpacity={0.8}>
-          <Text style={styles.metamaskIcon}>🦊</Text>
+          <Ionicons name="globe-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
           <Text style={styles.metamaskButtonText}>Mở MetaMask</Text>
         </TouchableOpacity>
 
         {error && (
           <View style={styles.errorBox}>
-            <Text style={styles.errorText}>⚠️ {error}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="warning-outline" size={16} color="#dc2626" />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
           </View>
         )}
 
         <View style={styles.instructionsCard}>
-          <Text style={styles.instructionsTitle}>📋 Hướng dẫn</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <Ionicons name="list-outline" size={18} color="#333" />
+            <Text style={styles.instructionsTitle}>Hướng dẫn</Text>
+          </View>
           <Text style={styles.instructionsText}>
             1. Mở MetaMask trên điện thoại{'\n'}
             2. Chuyển sang mạng Sepolia{'\n'}
@@ -197,7 +204,10 @@ const WalletScreen: React.FC = () => {
 
       {/* Balance Card */}
       <View style={styles.balanceCard}>
-        <Text style={styles.balanceTitle}>💰 Số dư</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+          <Ionicons name="cash-outline" size={20} color="#333" />
+          <Text style={styles.balanceTitle}>Số dư</Text>
+        </View>
 
         <View style={styles.tokenRow}>
           <Text style={styles.tokenName}>ETH</Text>
@@ -219,13 +229,16 @@ const WalletScreen: React.FC = () => {
       {/* Actions */}
       <View style={styles.actionsRow}>
         <TouchableOpacity style={styles.actionButton} onPress={handleCopyAddress}>
-          <Text>📋 Copy</Text>
+          <Ionicons name="copy-outline" size={16} color="#333" />
+          <Text style={{ marginLeft: 4 }}>Copy</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionButton} onPress={viewOnEtherscan}>
-          <Text>🔍 Etherscan</Text>
+          <Ionicons name="search-outline" size={16} color="#333" />
+          <Text style={{ marginLeft: 4 }}>Etherscan</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionButton} onPress={openMetaMask}>
-          <Text>🦊 MetaMask</Text>
+          <Ionicons name="globe-outline" size={16} color="#333" />
+          <Text style={{ marginLeft: 4 }}>MetaMask</Text>
         </TouchableOpacity>
       </View>
 
@@ -240,23 +253,26 @@ const WalletScreen: React.FC = () => {
             onPress={() => navigation.navigate('WalletSelect')}
             activeOpacity={0.8}
           >
-            <Text style={styles.switchWalletEmoji}>
-              {currentAccount?.emoji || '👛'}
-            </Text>
+            <View style={styles.switchWalletEmoji}>
+              <Ionicons name="wallet-outline" size={22} color="#60A5FA" />
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.switchWalletLabel}>
                 {currentAccount?.label || 'Ví Ganache'}
               </Text>
               <Text style={styles.switchWalletSub}>Nhấn để đổi sang ví khác</Text>
             </View>
-            <Text style={{ color: '#6b8bb5', fontSize: 20 }}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color="#6b8bb5" />
           </TouchableOpacity>
         );
       })()}
 
       {/* Disconnect */}
       <TouchableOpacity style={styles.disconnectButton} onPress={handleDisconnect}>
-        <Text style={styles.disconnectText}>🔌 Ngắt kết nối</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Ionicons name="power-outline" size={18} color="#e74c3c" />
+          <Text style={styles.disconnectText}>Ngắt kết nối</Text>
+        </View>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -285,9 +301,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  walletEmoji: {
-    fontSize: 40,
-  },
+  walletEmoji: {},
   heroTitle: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -412,7 +426,6 @@ const styles = StyleSheet.create({
   balanceTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 16,
   },
   tokenRow: {
     flexDirection: 'row',
@@ -439,8 +452,10 @@ const styles = StyleSheet.create({
   actionButton: {
     backgroundColor: '#fff',
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   disconnectButton: {
     marginHorizontal: 16,
@@ -466,7 +481,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a4a6a',
   },
-  switchWalletEmoji: { fontSize: 26 },
+  switchWalletEmoji: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1e3a6b', justifyContent: 'center' as const, alignItems: 'center' as const },
   switchWalletLabel: { color: '#fff', fontWeight: '600', fontSize: 14, marginBottom: 2 },
   switchWalletSub: { color: '#6b8bb5', fontSize: 12 },
 });

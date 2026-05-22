@@ -51,7 +51,7 @@ const KYCSuccessScreen: React.FC<KYCSuccessScreenProps> = ({ navigation }) => {
         {/* KYC Level Info */}
         <View style={[styles.kycLevelCard, { backgroundColor: colors.darkSurface }]}>
           <View style={styles.kycLevelHeader}>
-            <Text style={styles.kycLevelIcon}>🛡️</Text>
+            <Ionicons name="shield-checkmark-outline" size={24} color={colors.greenSuccess} style={{ marginRight: 12 }} />
             <Text style={[styles.kycLevelTitle, { color: colors.textWhite }]}>KYC Level 2</Text>
             <View style={[styles.kycBadge, { backgroundColor: colors.greenSuccess + '20' }]}>
               <Text style={[styles.kycBadgeText, { color: colors.greenSuccess }]}>Verified</Text>
@@ -64,22 +64,22 @@ const KYCSuccessScreen: React.FC<KYCSuccessScreenProps> = ({ navigation }) => {
             <Text style={[styles.benefitsTitle, { color: colors.textGray }]}>Quyền lợi của bạn:</Text>
             
             <View style={styles.benefitItem}>
-              <Text style={styles.benefitIcon}>💰</Text>
+              <Ionicons name="cash-outline" size={18} color={colors.greenSuccess} style={styles.benefitIcon} />
               <Text style={[styles.benefitText, { color: colors.textWhite }]}>Vay tối đa 50.000.000 VNĐ</Text>
             </View>
-            
+
             <View style={styles.benefitItem}>
-              <Text style={styles.benefitIcon}>📊</Text>
+              <Ionicons name="bar-chart-outline" size={18} color={colors.accentBlue} style={styles.benefitIcon} />
               <Text style={[styles.benefitText, { color: colors.textWhite }]}>Đầu tư không giới hạn</Text>
             </View>
-            
+
             <View style={styles.benefitItem}>
-              <Text style={styles.benefitIcon}>⚡</Text>
+              <Ionicons name="flash-outline" size={18} color={colors.yellowWarning} style={styles.benefitIcon} />
               <Text style={[styles.benefitText, { color: colors.textWhite }]}>Giải ngân trong 24h</Text>
             </View>
-            
+
             <View style={styles.benefitItem}>
-              <Text style={styles.benefitIcon}>🔒</Text>
+              <Ionicons name="lock-closed-outline" size={18} color={colors.textGray} style={styles.benefitIcon} />
               <Text style={[styles.benefitText, { color: colors.textWhite }]}>Bảo mật thông tin cá nhân</Text>
             </View>
           </View>
@@ -170,7 +170,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   kycLevelIcon: {
-    fontSize: 24,
     marginRight: 12,
   },
   kycLevelTitle: {
@@ -203,7 +202,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   benefitIcon: {
-    fontSize: 16,
     marginRight: 12,
     width: 24,
   },

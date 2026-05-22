@@ -77,7 +77,7 @@ const BankDetailScreen = ({ navigation }: { navigation: any }) => {
     const handleUnlink = () => {
         if (!account) return;
         Alert.alert(
-            '⚠️ Gỡ liên kết ngân hàng',
+            'Gỡ liên kết ngân hàng',
             `Bạn có chắc muốn gỡ liên kết tài khoản ${bank?.shortName || ''} (**** ${account.accountNumber.slice(-4)})?\n\nĐiểm tín dụng có thể bị ảnh hưởng sau khi gỡ liên kết.`,
             [
                 { text: 'Hủy', style: 'cancel' },

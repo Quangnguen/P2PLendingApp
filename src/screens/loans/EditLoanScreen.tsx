@@ -62,7 +62,7 @@ const EditLoanScreen: React.FC<EditLoanScreenProps> = ({ navigation, route }) =>
     if (!validateForm()) return;
 
     Alert.alert(
-      '📝 Xác nhận cập nhật',
+      'Xác nhận cập nhật',
       'Bạn có chắc muốn cập nhật yêu cầu vay này?',
       [
         { text: 'Hủy', style: 'cancel' },
@@ -79,12 +79,12 @@ const EditLoanScreen: React.FC<EditLoanScreenProps> = ({ navigation, route }) =>
                 purpose,
                 purposeDescription: description,
               });
-              Alert.alert('✅ Thành công', 'Đã cập nhật yêu cầu vay.', [
+              Alert.alert('Thành công', 'Đã cập nhật yêu cầu vay.', [
                 { text: 'OK', onPress: () => navigation.goBack() },
               ]);
             } catch (error: any) {
               const msg = error?.response?.data?.message || 'Không thể cập nhật yêu cầu vay';
-              Alert.alert('❌ Lỗi', msg);
+              Alert.alert('Lỗi', msg);
             } finally {
               setIsLoading(false);
             }
@@ -148,7 +148,10 @@ const EditLoanScreen: React.FC<EditLoanScreenProps> = ({ navigation, route }) =>
         >
           {/* Amount */}
           <View style={[styles.inputCard, { backgroundColor: colors.darkSurface }]}>
-            <Text style={[styles.inputLabel, { color: colors.textWhite }]}>💰 Số tiền vay (USDT)</Text>
+            <View style={styles.inputLabelRow}>
+              <Ionicons name="cash-outline" size={16} color={colors.accentBlue} />
+              <Text style={[styles.inputLabel, { color: colors.textWhite }]}>Số tiền vay (USDT)</Text>
+            </View>
             <View style={[styles.inputWrapper, { borderColor: errors.amount ? colors.redError : colors.darkBorder }]}>
               <TextInput
                 style={[styles.input, { color: colors.textWhite }]}
@@ -168,7 +171,10 @@ const EditLoanScreen: React.FC<EditLoanScreenProps> = ({ navigation, route }) =>
 
           {/* Interest Rate */}
           <View style={[styles.inputCard, { backgroundColor: colors.darkSurface }]}>
-            <Text style={[styles.inputLabel, { color: colors.textWhite }]}>📊 Lãi suất (%/năm)</Text>
+            <View style={styles.inputLabelRow}>
+              <Ionicons name="trending-up-outline" size={16} color={colors.accentBlue} />
+              <Text style={[styles.inputLabel, { color: colors.textWhite }]}>Lãi suất (%/năm)</Text>
+            </View>
             <View style={[styles.inputWrapper, { borderColor: errors.interestRate ? colors.redError : colors.darkBorder }]}>
               <TextInput
                 style={[styles.input, { color: colors.textWhite }]}
@@ -188,7 +194,10 @@ const EditLoanScreen: React.FC<EditLoanScreenProps> = ({ navigation, route }) =>
 
           {/* Duration */}
           <View style={[styles.inputCard, { backgroundColor: colors.darkSurface }]}>
-            <Text style={[styles.inputLabel, { color: colors.textWhite }]}>⏱️ Thời hạn vay</Text>
+            <View style={styles.inputLabelRow}>
+              <Ionicons name="time-outline" size={16} color={colors.accentBlue} />
+              <Text style={[styles.inputLabel, { color: colors.textWhite }]}>Thời hạn vay</Text>
+            </View>
             <View style={styles.durationContainer}>
               {durationOptions.map(opt => renderDurationChip(opt.value, opt.label))}
             </View>
@@ -196,7 +205,10 @@ const EditLoanScreen: React.FC<EditLoanScreenProps> = ({ navigation, route }) =>
 
           {/* Purpose */}
           <View style={[styles.inputCard, { backgroundColor: colors.darkSurface }]}>
-            <Text style={[styles.inputLabel, { color: colors.textWhite }]}>🎯 Mục đích vay</Text>
+            <View style={styles.inputLabelRow}>
+              <Ionicons name="flag-outline" size={16} color={colors.accentBlue} />
+              <Text style={[styles.inputLabel, { color: colors.textWhite }]}>Mục đích vay</Text>
+            </View>
             <TextInput
               style={[styles.input, styles.textArea, { color: colors.textWhite, borderColor: colors.darkBorder }]}
               placeholder="Nhập mục đích vay"
@@ -208,7 +220,10 @@ const EditLoanScreen: React.FC<EditLoanScreenProps> = ({ navigation, route }) =>
 
           {/* Description */}
           <View style={[styles.inputCard, { backgroundColor: colors.darkSurface }]}>
-            <Text style={[styles.inputLabel, { color: colors.textWhite }]}>📝 Mô tả chi tiết</Text>
+            <View style={styles.inputLabelRow}>
+              <Ionicons name="document-text-outline" size={16} color={colors.accentBlue} />
+              <Text style={[styles.inputLabel, { color: colors.textWhite }]}>Mô tả chi tiết</Text>
+            </View>
             <TextInput
               style={[styles.input, styles.textArea, styles.descriptionInput, { color: colors.textWhite, borderColor: colors.darkBorder }]}
               placeholder="Mô tả chi tiết về yêu cầu vay..."
@@ -277,10 +292,15 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
   },
+  inputLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
   inputLabel: {
     fontSize: 15,
     fontWeight: '600',
-    marginBottom: 12,
   },
   inputWrapper: {
     flexDirection: 'row',

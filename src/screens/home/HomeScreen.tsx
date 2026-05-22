@@ -30,6 +30,14 @@ type HomeScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Home'>;
 };
 
+const toNum = (val: any): number => {
+  if (val == null) return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') return parseFloat(val) || 0;
+  if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+  return parseFloat(String(val)) || 0;
+};
+
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const { colors } = useTheme();
   const dispatch = useAppDispatch();
@@ -42,15 +50,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [recentTransactions, setRecentTransactions] = React.useState<any[]>([]);
   const [myPendingLoansCount, setMyPendingLoansCount] = React.useState<number>(0);
   const [unreadNotifications, setUnreadNotifications] = React.useState<number>(0);
-
-  // Helper: Safely convert numeric values from API
-  const toNum = (val: any): number => {
-    if (val == null) return 0;
-    if (typeof val === 'number') return val;
-    if (typeof val === 'string') return parseFloat(val) || 0;
-    if (val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
-    return parseFloat(String(val)) || 0;
-  };
 
   const fetchData = React.useCallback(async () => {
     try {
@@ -105,24 +104,17 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     }
   }, [user?._id]);
 
-  // Refresh user data và data các khối mỗi khi vào HomeScreen
+  // Refresh tất cả dữ liệu mỗi khi vào HomeScreen (bao gồm lần đầu mount)
   useFocusEffect(
     React.useCallback(() => {
       dispatch(loadUser());
-      // Load credit score nếu chưa có
+      dispatch(loadConnections());
       if (!creditScore && user?._id) {
         dispatch(loadCreditScore(user._id));
       }
-      // Re-fetch transactions, pending loans, notifications
       fetchData();
     }, [dispatch, creditScore, user?._id, fetchData])
   );
-
-  // Tự động load connections và dữ liệu khi vào HomeScreen
-  useEffect(() => {
-    dispatch(loadConnections());
-    fetchData();
-  }, [dispatch, fetchData]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -351,9 +343,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 activeOpacity={0.7}
               >
                 <View style={[styles.quickActionIcon, { backgroundColor: action.color + '20' }]}>
-                  <Ionicons name={action.icon} size={28} color={action.color} />
+                  <Ionicons name={action.icon} size={26} color={action.color} />
                 </View>
                 <Text style={[styles.quickActionTitle, { color: colors.textWhite }]}>{action.title}</Text>
+                <Text style={[styles.quickActionSubtitle, { color: colors.textGray }]}>{action.subtitle}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -511,7 +504,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 8,
     paddingBottom: 100,
   },
   header: {
@@ -703,6 +697,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     marginBottom: 16,
+    marginTop: 0,
   },
   seeAllText: {
     fontSize: 14,
@@ -710,28 +705,29 @@ const styles = StyleSheet.create({
   quickActionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -8,
+    gap: 12,
   },
   quickActionItem: {
-    width: '45%',
-    marginLeft: '3.33%',
-    marginBottom: 16,
+    width: '47.5%',
     padding: 16,
     borderRadius: 20,
     borderWidth: 1,
   },
   quickActionIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   quickActionTitle: {
     fontSize: 15,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 3,
+  },
+  quickActionSubtitle: {
+    fontSize: 12,
   },
   featuredLoanCard: {
     width: 280,

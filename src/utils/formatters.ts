@@ -3,7 +3,7 @@
  */
 export const formatCurrency = (amount: number, currency: string = 'VND'): string => {
   if (currency === 'VND') {
-    return new Intl.NumberFormat('vi-VN').format(amount) + ' ₫';
+    return new Intl.NumberFormat('vi-VN').format(amount);
   }
   if (currency === 'USD' || currency === 'USDT') {
     return new Intl.NumberFormat('en-US', {

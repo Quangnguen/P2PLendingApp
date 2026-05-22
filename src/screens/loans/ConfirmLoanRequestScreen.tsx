@@ -30,13 +30,13 @@ const purposeLabels: Record<string, string> = {
   other: 'Khác',
 };
 
-const purposeIcons: Record<string, string> = {
-  business: '💼',
-  education: '📚',
-  medical: '🏥',
-  personal: '👤',
-  home: '🏠',
-  other: '📦',
+const purposeIonicons: Record<string, string> = {
+  business: 'briefcase-outline',
+  education: 'school-outline',
+  medical: 'medkit-outline',
+  personal: 'person-outline',
+  home: 'home-outline',
+  other: 'cube-outline',
 };
 
 const ConfirmLoanRequestScreen: React.FC<ConfirmLoanRequestScreenProps> = ({
@@ -123,7 +123,7 @@ const ConfirmLoanRequestScreen: React.FC<ConfirmLoanRequestScreenProps> = ({
           <View style={styles.detailRow}>
             <Text style={[styles.detailLabel, { color: colors.textGray }]}>Mục đích</Text>
             <View style={styles.purposeContainer}>
-              <Text style={styles.purposeIcon}>{purposeIcons[purpose]}</Text>
+              <Ionicons name={(purposeIonicons[purpose] || 'cube-outline') as any} size={16} color={colors.accentBlue} style={styles.purposeIcon} />
               <Text style={[styles.detailValue, { color: colors.textWhite }]}>{purposeLabels[purpose]}</Text>
             </View>
           </View>
@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
   detailLabel: { fontSize: 14 },
   detailValue: { fontSize: 14, fontWeight: '600' },
   purposeContainer: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  purposeIcon: { fontSize: 18 },
+  purposeIcon: { marginRight: 6 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 8, marginTop: 8 },
   totalLabel: { fontSize: 16, fontWeight: '600' },
   totalValue: { fontSize: 18, fontWeight: 'bold' },

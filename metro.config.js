@@ -1,17 +1,15 @@
 const path = require('path');
 const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
 
-/**
- * Metro configuration
- * https://reactnative.dev/docs/metro
- *
- * @type {import('@react-native/metro-config').MetroConfig}
- */
 const config = {
   resolver: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
     },
+    blockList: [
+      /android\/app\/\.cxx\/.*/,
+      /android\/build\/.*/,
+    ],
   },
 };
 

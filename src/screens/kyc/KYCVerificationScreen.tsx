@@ -186,6 +186,48 @@ const KYCVerificationScreen: React.FC<KYCVerificationScreenProps> = ({ navigatio
     );
   }
 
+  // ── REJECTED — face match thất bại, cho thử lại từ bước 1 ───────────────
+  if (status === 'REJECTED') {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.darkBackground }]} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={[styles.backButton, { backgroundColor: colors.darkSurface }]}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={20} color={colors.textWhite} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.textWhite }]}>Xác minh danh tính</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+
+        <ScrollView contentContainerStyle={styles.centeredScroll} showsVerticalScrollIndicator={false}>
+          <View style={[styles.successCircle, { backgroundColor: '#ef444420' }]}>
+            <Ionicons name="close-circle" size={64} color="#ef4444" />
+          </View>
+          <Text style={[styles.successTitle, { color: colors.textWhite }]}>Xác thực thất bại</Text>
+          <Text style={[styles.successSub, { color: colors.textGray }]}>
+            Khuôn mặt không khớp với ảnh trên giấy tờ. Vui lòng thực hiện lại từ đầu.
+          </Text>
+          {kycStatus?.faceMatchScore != null && (
+            <View style={[styles.faceRow, { backgroundColor: colors.darkSurface, borderColor: colors.darkBorder }]}>
+              <Ionicons name="scan-outline" size={18} color="#ef4444" style={{ marginRight: 8 }} />
+              <Text style={[styles.faceLabel, { color: colors.textGray }]}>Độ khớp khuôn mặt</Text>
+              <Text style={[styles.faceScore, { color: '#ef4444' }]}>{kycStatus.faceMatchScore}%</Text>
+            </View>
+          )}
+        </ScrollView>
+
+        <View style={[styles.bottomContainer, { backgroundColor: colors.darkBackground }]}>
+          <Button
+            title="Thực hiện lại KYC"
+            onPress={() => navigation.navigate('KYCCaptureID', { side: 'front' })}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   // ── Chưa xác thực — hướng dẫn 3 bước ────────────────────────────────────
   const steps = [
     { n: 1, title: 'Chụp ảnh giấy tờ', desc: 'Chụp rõ nét mặt trước và mặt sau CMND/CCCD.', icon: 'id-card-outline', color: '#60a5fa', active: true },

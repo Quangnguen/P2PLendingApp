@@ -1,22 +1,18 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useAppDispatch, useToasts, hideToast } from '../store';
 import { useTheme } from './ThemeProvider';
 import { Toast, ToastType } from '../types/toast.types';
 
-const getToastIcon = (type: ToastType): string => {
+const getToastIconName = (type: ToastType): string => {
   switch (type) {
-    case 'success':
-      return '✅';
-    case 'error':
-      return '❌';
-    case 'warning':
-      return '⚠️';
-    case 'info':
-      return 'ℹ️';
-    default:
-      return 'ℹ️';
+    case 'success': return 'checkmark-circle';
+    case 'error':   return 'close-circle';
+    case 'warning': return 'warning';
+    case 'info':    return 'information-circle';
+    default:        return 'information-circle';
   }
 };
 
@@ -102,12 +98,12 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onHide }) => {
         onPress={handleHide}
         activeOpacity={0.9}
       >
-        <Text style={styles.icon}>{getToastIcon(toast.type)}</Text>
+        <Ionicons name={getToastIconName(toast.type)} size={22} color="#fff" style={styles.icon} />
         <View style={styles.textContainer}>
           {toast.title && <Text style={styles.title}>{toast.title}</Text>}
           <Text style={styles.message}>{toast.message}</Text>
         </View>
-        <Text style={styles.closeIcon}>✕</Text>
+        <Ionicons name="close" size={18} color="rgba(255,255,255,0.8)" style={styles.closeIcon} />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -163,7 +159,6 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   icon: {
-    fontSize: 20,
     marginRight: 12,
   },
   textContainer: {
@@ -181,10 +176,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   closeIcon: {
-    color: '#FFFFFF',
-    fontSize: 16,
     marginLeft: 8,
-    opacity: 0.8,
   },
 });
 
