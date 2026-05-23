@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -40,6 +41,19 @@ const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation, r
 
 
   const handleConfirm = () => {
+    // Validate số CCCD: phải là 12 số (CCCD mới) hoặc 9 số (CMND cũ)
+    const trimmedId = idNumber.trim();
+    if (!/^\d{9}$|^\d{12}$/.test(trimmedId)) {
+      Alert.alert(
+        'Số CCCD không hợp lệ',
+        'Số Căn cước công dân phải gồm 12 chữ số (CCCD mới) hoặc 9 chữ số (CMND cũ). Vui lòng kiểm tra lại.',
+      );
+      return;
+    }
+    if (!fullName.trim()) {
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập họ và tên.');
+      return;
+    }
     navigation.navigate('KYCFaceScan', {
       frontImageUri: frontImageUri
     });

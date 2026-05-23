@@ -87,6 +87,7 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
           collateralAmount: toNum(data.collateralAmount).toString(),
           lender: data.lenderId?.fullName || 'Người cho vay',
           lenderWallet: data.lenderId?.walletAddress,
+          borrowerWallet: data.borrowerId?.walletAddress,
           status: data.status,
           loanContractAddress: data.loanContractAddress,
         });
@@ -150,10 +151,10 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
         // LUỒNG CHUẨN BLOCKCHAIN
         setRepayStep('Đang lấy số tiền cần trả từ smart contract...');
 
-        // FIX 1: Lấy totalAmount ON-CHAIN để tránh lệch block-time
-        // totalRepayment tính off-chain có thể bị stale vài giây
+        // FIX 1: Đọc loanDetails để verify borrower và trạng thái TRƯỚC khi gửi tx
         const loanIface = new ethers.utils.Interface([
           'function getTotalRepaymentAmount() view returns (uint256)',
+          'function getLoanDetails() view returns (tuple(uint256 loanId, address borrower, address lender, address loanToken, address collateralToken, uint256 principal, uint256 interestRate, uint256 collateralAmount, uint256 duration, uint256 startTime, uint256 endTime, uint256 createdAt, uint8 status))',
         ]);
         const loanContract = new ethers.Contract(
           loan.loanContractAddress,
@@ -161,13 +162,78 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
           // @ts-ignore - provider từ Web3
           new ethers.providers.JsonRpcProvider(CURRENT_CHAIN.rpcUrl),
         );
+
+        // Kiểm tra on-chain trước khi gửi bất kỳ tx nào
         let onChainTotal: ethers.BigNumber;
         try {
-          onChainTotal = await loanContract.getTotalRepaymentAmount();
+          const [details, total] = await Promise.all([
+            loanContract.getLoanDetails(),
+            loanContract.getTotalRepaymentAmount(),
+          ]);
+
+          // Kiểm tra borrower — onlyBorrower modifier sẽ revert nếu sai
+          const contractBorrower: string = details.borrower;
+          if (contractBorrower.toLowerCase() !== connection.address?.toLowerCase()) {
+            toast.error(
+              `Ví hiện tại (${connection.address?.slice(0, 8)}...) không phải người vay.\n` +
+              `Khoản vay thuộc về ví: ${contractBorrower.slice(0, 8)}...${contractBorrower.slice(-6)}.\n` +
+              `Hãy chuyển sang đúng tài khoản người vay trong Ganache.`,
+              'Sai ví'
+            );
+            setIsLoading(false);
+            setRepayStep('');
+            return;
+          }
+
+          // Kiểm tra status — 1 = ACTIVE
+          const status: number = details.status;
+          if (status === 2) {
+            // REPAID on-chain — on-chain tx đã thành công, sync backend nếu chưa cập nhật
+            setRepayStep('Đang đồng bộ trạng thái...');
+            const onChainAmountRaw = await loanContract.getTotalRepaymentAmount().catch(() => total);
+            const syncAmount = parseFloat(ethers.utils.formatUnits(onChainAmountRaw.isZero() ? total : onChainAmountRaw, 6));
+            try {
+              const { loanApi } = await import('@/api/loan.api');
+              await loanApi.repayLoan(loanId, { txHash: '', amount: syncAmount });
+            } catch (_) {
+              // Bỏ qua lỗi sync — on-chain là authoritative
+            }
+            toast.success(
+              'Khoản vay đã được trả thành công trên blockchain!\n' +
+              'ETH thế chấp đã hoàn về ví của bạn.',
+              'Đã trả nợ'
+            );
+            setIsLoading(false);
+            setRepayStep('');
+            navigation.replace('LoanDetail', { loanId });
+            return;
+          }
+          if (status !== 1) {
+            const statusLabels: Record<number, string> = { 0: 'PENDING', 3: 'LIQUIDATED', 4: 'CANCELLED' };
+            toast.error(
+              `Khoản vay không ở trạng thái ACTIVE (đang ở: ${statusLabels[status] ?? status}).\n` +
+              `Không thể trả nợ.`,
+              'Trạng thái không hợp lệ'
+            );
+            setIsLoading(false);
+            setRepayStep('');
+            return;
+          }
+
+          onChainTotal = total;
           // Dùng on-chain total để gửi backend (chính xác hơn off-chain)
           actualRepayAmount = parseFloat(ethers.utils.formatUnits(onChainTotal, 6));
-        } catch {
-          // Fallback về off-chain nếu không đọc được contract
+
+          // Nếu on-chain total = 0 (không thể xảy ra với ACTIVE loan, nhưng guard anyway)
+          if (onChainTotal.isZero()) {
+            toast.error('Không thể lấy số tiền cần trả từ smart contract. Vui lòng thử lại.', 'Lỗi');
+            setIsLoading(false);
+            setRepayStep('');
+            return;
+          }
+        } catch (readErr: any) {
+          // Fallback về off-chain nếu không đọc được contract (chỉ warn, không block)
+          console.warn('Không đọc được Loan contract, dùng off-chain total:', readErr.message);
           onChainTotal = ethers.utils.parseUnits(totalRepayment, 6);
         }
 
@@ -245,10 +311,26 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
         `TX: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
         'Trả nợ thành công'
       );
-      navigation.goBack();
+      // replace thay vì goBack để LoanDetailScreen load lại dữ liệu mới từ server
+      navigation.replace('LoanDetail', { loanId });
     } catch (error: any) {
-      const msg = error?.response?.data?.message || error.message || 'Không thể trả nợ. Vui lòng thử lại.';
-      toast.error(msg, 'Lỗi');
+      const raw = error?.response?.data?.message || error.message || '';
+      let msg = raw || 'Không thể trả nợ. Vui lòng thử lại.';
+      if (raw.includes('revert') || raw.includes('VM Exception')) {
+        if (raw.includes('OnlyBorrower') || raw.includes('borrower'))
+          msg = 'Ví hiện tại không phải người vay. Hãy chuyển sang tài khoản đã tạo khoản vay này.';
+        else if (raw.includes('InvalidStatus'))
+          msg = 'Khoản vay không ở trạng thái ACTIVE. Không thể trả nợ.';
+        else if (raw.includes('InsufficientAllowance') || raw.includes('allowance'))
+          msg = 'Ủy quyền USDT không đủ. Vui lòng thử lại.';
+        else if (raw.includes('InsufficientBalance') || raw.includes('balance'))
+          msg = 'Số dư USDT không đủ để trả nợ.';
+        else if (raw.includes('ZeroAmount'))
+          msg = 'Số tiền trả nợ = 0. Khoản vay có thể đã được trả hoặc chưa được kích hoạt.';
+        else
+          msg = 'Giao dịch bị từ chối bởi smart contract. Kiểm tra ví và thử lại.';
+      }
+      toast.error(msg, 'Trả nợ thất bại');
     } finally {
       setIsLoading(false);
       setShowConfirm(false);
@@ -428,6 +510,16 @@ const RepayScreen: React.FC<RepayScreenProps> = ({ navigation, route }) => {
               <Text style={[styles.insufficientText, { color: colors.redError }]}>
                 Số dư USDT không đủ để trả nợ. Cần nạp thêm{' '}
                 {(parseFloat(totalRepayment) - parseFloat(balances.usdt)).toFixed(2)} USDT.
+              </Text>
+            </View>
+          )}
+          {loan.borrowerWallet && connection.address &&
+            loan.borrowerWallet.toLowerCase() !== connection.address.toLowerCase() && (
+            <View style={[styles.insufficientWarning, { backgroundColor: colors.yellowWarning + '15' }]}>
+              <Ionicons name="alert-circle" size={16} color={colors.yellowWarning} />
+              <Text style={[styles.insufficientText, { color: colors.yellowWarning }]}>
+                Ví hiện tại không phải người vay. Chuyển sang ví{' '}
+                {loan.borrowerWallet.slice(0, 8)}...{loan.borrowerWallet.slice(-6)} để trả nợ.
               </Text>
             </View>
           )}

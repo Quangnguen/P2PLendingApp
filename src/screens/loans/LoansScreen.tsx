@@ -29,7 +29,7 @@ interface LoanItem {
   title: string;
   amount: number;
   interestRate: number;
-  status: 'pending' | 'approved' | 'active' | 'completed' | 'rejected';
+  status: 'pending' | 'approved' | 'active' | 'overdue' | 'completed' | 'rejected';
   dueDate: Date;
   borrower?: string;
   lender?: string;
@@ -42,6 +42,7 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'pending', label: 'Đang chờ' },
   { key: 'approved', label: 'Đã duyệt' },
   { key: 'active', label: 'Hoạt động' },
+  { key: 'overdue', label: 'Quá hạn' },
   { key: 'completed', label: 'Hoàn thành' },
   { key: 'rejected', label: 'Đã hủy' },
 ];
@@ -69,6 +70,8 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
   }, [activeTab]);
 
   // Fetch data from API - refresh mỗi khi screen được focus
+  const userId = user?._id ? String(user._id) : null;
+
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
@@ -106,15 +109,20 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
           }));
           
           // 2. Active/Repaid loans (đã giải ngân)
+          const myUserId = user?._id ? String(user._id) : null;
           const myBorrowingLoans = loans.filter((l: any) => {
-            const bId = l.borrowerId?._id || l.borrowerId;
-            return bId === user?._id;
+            const bId = String(l.borrowerId?._id || l.borrowerId || '');
+            return myUserId && bId === myUserId;
           }).map((loan: any) => ({
             id: loan._id || loan.id,
             title: `Khoản vay - ${toNum(loan.principalAmount)} USDT`,
             amount: toNum(loan.principalAmount),
             interestRate: toNum(loan.interestRate),
-            status: loan.status === 'repaid' ? 'completed' : loan.status === 'active' ? 'active' : loan.status === 'overdue' ? 'rejected' : 'active',
+            status: (loan.status === 'repaid' ? 'completed'
+              : loan.status === 'active' ? 'active'
+              : loan.status === 'overdue' ? 'overdue'
+              : loan.status === 'cancelled' || loan.status === 'liquidated' ? 'rejected'
+              : 'active') as LoanItem['status'],
             dueDate: new Date(loan.dueDate || Date.now()),
             lender: loan.lenderId?.fullName || 'N/A',
           }));
@@ -123,14 +131,18 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
 
           // === LENDING TAB: My investments ===
           const lending: LoanItem[] = loans.filter((l: any) => {
-            const lId = l.lenderId?._id || l.lenderId;
-            return lId === user?._id;
+            const lId = String(l.lenderId?._id || l.lenderId || '');
+            return myUserId && lId === myUserId;
           }).map((loan: any) => ({
             id: loan._id || loan.id,
             title: `Đầu tư - ${toNum(loan.principalAmount)} USDT`,
             amount: toNum(loan.principalAmount),
             interestRate: toNum(loan.interestRate),
-            status: loan.status === 'repaid' ? 'completed' : loan.status === 'active' ? 'active' : loan.status === 'overdue' ? 'rejected' : 'active',
+            status: (loan.status === 'repaid' ? 'completed'
+              : loan.status === 'active' ? 'active'
+              : loan.status === 'overdue' ? 'overdue'
+              : loan.status === 'cancelled' || loan.status === 'liquidated' ? 'rejected'
+              : 'active') as LoanItem['status'],
             dueDate: new Date(loan.dueDate || Date.now()),
             borrower: loan.borrowerId?.fullName || 'N/A',
             lender: 'Tôi',
@@ -148,7 +160,7 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
       return () => {
         isActive = false;
       };
-    }, [])
+    }, [userId])  // re-run khi userId đổi (async auth load)
   );
 
   const getFilterColor = (key: StatusFilter): string => {
@@ -156,43 +168,34 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
       case 'pending':   return colors.yellowWarning;
       case 'approved':  return '#60a5fa';
       case 'active':    return colors.greenSuccess;
+      case 'overdue':   return colors.redError;
       case 'completed': return colors.accentBlue;
-      case 'rejected':  return colors.redError;
+      case 'rejected':  return colors.textGray;
       default:          return colors.accentBlue;
     }
   };
 
   const getStatusColor = (status: LoanItem['status']) => {
     switch (status) {
-      case 'pending':
-        return colors.yellowWarning;
-      case 'approved':
-        return '#60a5fa';
-      case 'active':
-        return colors.greenSuccess;
-      case 'completed':
-        return colors.accentBlue;
-      case 'rejected':
-        return colors.redError;
-      default:
-        return colors.textGray;
+      case 'pending':   return colors.yellowWarning;
+      case 'approved':  return '#60a5fa';
+      case 'active':    return colors.greenSuccess;
+      case 'overdue':   return colors.redError;
+      case 'completed': return colors.accentBlue;
+      case 'rejected':  return colors.textGray;
+      default:          return colors.textGray;
     }
   };
 
   const getStatusText = (status: LoanItem['status']) => {
     switch (status) {
-      case 'pending':
-        return 'Đang chờ duyệt';
-      case 'approved':
-        return 'Chờ giải ngân';
-      case 'active':
-        return 'Đang hoạt động';
-      case 'completed':
-        return 'Hoàn thành';
-      case 'rejected':
-        return 'Đã hủy';
-      default:
-        return status;
+      case 'pending':   return 'Đang chờ duyệt';
+      case 'approved':  return 'Chờ giải ngân';
+      case 'active':    return 'Đang hoạt động';
+      case 'overdue':   return 'Quá hạn';
+      case 'completed': return 'Hoàn thành';
+      case 'rejected':  return 'Đã hủy';
+      default:          return status;
     }
   };
 

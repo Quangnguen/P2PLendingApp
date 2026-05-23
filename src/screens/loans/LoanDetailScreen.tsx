@@ -189,6 +189,7 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
       case 'funding': return colors.yellowWarning;
       case 'active': return colors.greenSuccess;
       case 'funded': return colors.greenSuccess;
+      case 'overdue': return colors.yellowWarning;
       case 'repaid': return colors.accentBlue;
       case 'completed': return colors.accentBlue;
       case 'cancelled': return colors.redError;
@@ -203,6 +204,7 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
       case 'funding': return 'Đang gọi vốn';
       case 'active': return 'Đang hoạt động';
       case 'funded': return 'Đã cấp vốn';
+      case 'overdue': return 'Quá hạn';
       case 'repaid': return 'Đã trả nợ';
       case 'completed': return 'Hoàn thành';
       case 'cancelled': return 'Đã hủy';
@@ -319,8 +321,8 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
       );
     }
 
-    // Case 2: My loan, funded/active → Show Repay button
-    if (isMyLoan && (loan.status === 'active' || loan.status === 'funded')) {
+    // Case 2: My loan, funded/active/overdue → Show Repay button
+    if (isMyLoan && (loan.status === 'active' || loan.status === 'funded' || loan.status === 'overdue')) {
       return (
         <View style={[styles.footer, { backgroundColor: colors.darkBackground, borderTopColor: colors.darkBorder }]}>
           <Button
@@ -345,8 +347,8 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
       );
     }
 
-    // Case 4: I'm the lender, loan is active → Show info (can view repayment progress)
-    if (isMyInvestment && loan.status === 'active') {
+    // Case 4: I'm the lender, loan is active/overdue → Show info (can view repayment progress)
+    if (isMyInvestment && (loan.status === 'active' || loan.status === 'overdue')) {
       return (
         <View style={[styles.footer, { backgroundColor: colors.darkBackground, borderTopColor: colors.darkBorder }]}>
           <View style={[styles.infoFooter, { backgroundColor: colors.accentBlue + '15' }]}>

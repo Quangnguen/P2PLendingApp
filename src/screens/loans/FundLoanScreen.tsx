@@ -45,7 +45,7 @@ type FundLoanScreenProps = {
 
 const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
-  const { balances, connection, sendUSDT, sendTransaction, refreshBalances } = useWeb3();
+  const { balances, connection, sendUSDT, sendTransaction, refreshBalances, getProvider } = useWeb3();
   const { user } = useAuth();
   const { connections } = useOpenBanking();
   const toast = useToast();
@@ -179,7 +179,7 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
       let txHash = null;
 
       if (loanRequest.onChainRequestId !== undefined && loanRequest.onChainRequestId !== null) {
-        // 1. PRE-FLIGHT: Verify request actually exists on-chain
+        // 1. PRE-FLIGHT: Verify request on-chain
         const provider = new ethers.providers.StaticJsonRpcProvider(
           'http://localhost:7545', { chainId: 1337, name: 'ganache' }
         );
@@ -188,11 +188,38 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
           'function requestBorrower(uint256) view returns (address)',
         ]);
         const p2pContract = new ethers.Contract(CONTRACT_ADDRESSES.P2P_LENDING, p2pReadInterface, provider);
-        const isActive = await p2pContract.requestActive(loanRequest.onChainRequestId);
+
+        const [isActive, borrowerOnChain] = await Promise.all([
+          p2pContract.requestActive(loanRequest.onChainRequestId),
+          p2pContract.requestBorrower(loanRequest.onChainRequestId),
+        ]);
+
         if (!isActive) {
           toast.error(
             `Request #${loanRequest.onChainRequestId} không tồn tại hoặc đã bị hủy trên hợp đồng hiện tại.\n\nVui lòng tạo yêu cầu vay mới sau khi deploy lại hệ thống.`,
             'Lỗi On-Chain'
+          );
+          setIsLoading(false);
+          setFundingStep('');
+          return;
+        }
+
+        // Kiểm tra tự cấp vốn (smart contract sẽ revert nếu bỏ qua check này)
+        if (borrowerOnChain.toLowerCase() === connection.address?.toLowerCase()) {
+          toast.error(
+            'Bạn không thể cấp vốn cho khoản vay của chính mình.\n\nHãy chuyển sang ví khác (VD: Account #2 Bob) để đóng vai Lender.',
+            'Không hợp lệ'
+          );
+          setIsLoading(false);
+          setFundingStep('');
+          return;
+        }
+
+        // Kiểm tra request hết hạn
+        if (loanRequest.expiresAt && Date.now() > loanRequest.expiresAt) {
+          toast.error(
+            'Yêu cầu vay này đã hết hạn. Người vay cần tạo yêu cầu mới.',
+            'Hết hạn'
           );
           setIsLoading(false);
           setFundingStep('');
@@ -240,17 +267,52 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
         return;
       }
 
-      // Bước 3: Thông báo backend ghi nhận
+      // Bước 3: Lấy địa chỉ Loan contract từ event LoanMatched trong receipt
+      setFundingStep('Đang xác nhận hợp đồng vay...');
+      let loanContractAddress: string | null = null;
+      const provider = getProvider();
+      if (provider && txHash) {
+        const receipt = await provider.getTransactionReceipt(txHash);
+        const iface = new ethers.utils.Interface([
+          'event LoanMatched(uint256 indexed requestId, address indexed lender, address indexed loanContract, uint256 platformFee, uint256 borrowerReceived, uint256 lenderAPY, uint256 expectedReturn)'
+        ]);
+        for (const log of receipt?.logs || []) {
+          try {
+            const parsed = iface.parseLog(log);
+            if (parsed.name === 'LoanMatched') {
+              loanContractAddress = parsed.args.loanContract;
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+
+      // Bước 4: Thông báo backend ghi nhận
       setFundingStep('Đang ghi nhận trên hệ thống...');
       const { loanApi } = await import('@/api/loan.api');
-      await loanApi.fundLoan(requestId, { txHash });
+      await loanApi.fundLoan(requestId, { txHash, loanContractAddress: loanContractAddress ?? undefined });
 
       await refreshBalances();
 
       setSuccessData({ txHash });
       setShowSuccess(true);
     } catch (error: any) {
-      const msg = error?.response?.data?.message || error.message || 'Không thể cấp vốn. Vui lòng thử lại.';
+      const raw = error?.response?.data?.message || error.message || '';
+      let msg = raw || 'Không thể cấp vốn. Vui lòng thử lại.';
+      // Giải thích các lỗi on-chain phổ biến (Ganache không trả về reason)
+      if (raw.includes('revert') || raw.includes('VM Exception')) {
+        if (raw.includes('CannotFundOwnLoan') || raw.includes('own')) {
+          msg = 'Bạn không thể cấp vốn cho khoản vay của chính mình.';
+        } else if (raw.includes('RequestExpired') || raw.includes('expired')) {
+          msg = 'Yêu cầu vay đã hết hạn.';
+        } else if (raw.includes('InsufficientAllowance') || raw.includes('allowance')) {
+          msg = 'Số USDT được ủy quyền không đủ. Hãy thử lại.';
+        } else if (raw.includes('Insufficient') || raw.includes('balance')) {
+          msg = `Số dư USDT không đủ. Cần ít nhất ${loanRequest?.amount} USDT trong ví của bạn.`;
+        } else {
+          msg = 'Giao dịch bị từ chối bởi smart contract. Kiểm tra số dư USDT và thử lại.';
+        }
+      }
       toast.error(msg, 'Cấp vốn thất bại');
     } finally {
       setIsLoading(false);
