@@ -1,14 +1,16 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-//   Dimensions,
+  StatusBar,
+  Animated,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Button } from '../../components/common';
+import LinearGradient from 'react-native-linear-gradient';
 import { useTheme } from '../../providers';
 import { RootStackParamList } from '../../navigation/types';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -17,225 +19,355 @@ type KYCSuccessScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'KYCSuccess'>;
 };
 
-// const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const BENEFITS = [
+  { icon: 'cash-outline',           color: '#34d399', label: 'Vay tối đa',   value: '50.000.000 VNĐ' },
+  { icon: 'trending-up-outline',    color: '#60a5fa', label: 'Đầu tư',       value: 'Không giới hạn' },
+  { icon: 'flash-outline',          color: '#fbbf24', label: 'Giải ngân',    value: 'Trong 24 giờ' },
+  { icon: 'shield-checkmark-outline', color: '#a78bfa', label: 'Bảo mật',   value: 'Mã hoá 256-bit' },
+];
 
 const KYCSuccessScreen: React.FC<KYCSuccessScreenProps> = ({ navigation }) => {
   const { colors } = useTheme();
 
-  const handleDone = () => {
-    // Navigate back to profile or home
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Main' }],
-    });
-  };
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const pulse1    = useRef(new Animated.Value(1)).current;
+  const pulse2    = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 55,
+        friction: 6,
+        useNativeDriver: true,
+      }),
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 450, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 450, useNativeDriver: true }),
+      ]),
+    ]).start();
+
+    const loopPulse = (anim: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(anim, { toValue: 1.4, duration: 1400, useNativeDriver: true }),
+          Animated.timing(anim, { toValue: 1,   duration: 1400, useNativeDriver: true }),
+        ])
+      ).start();
+
+    loopPulse(pulse1, 0);
+    loopPulse(pulse2, 700);
+  }, []);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.darkBackground }]} edges={['top', 'bottom']}>
-      <View style={styles.content}>
-        {/* Success Animation/Icon */}
-        <View style={styles.successIconContainer}>
-          <View style={[styles.successCircle, { backgroundColor: colors.greenSuccess + '20' }]}>
-            <View style={[styles.successInnerCircle, { backgroundColor: colors.greenSuccess }]}>
-              <Ionicons name="checkmark" size={48} color={colors.textWhite} />
-            </View>
-          </View>
-        </View>
+    <LinearGradient colors={['#0f172a', '#1e1b4b', '#0f172a']} style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
 
-        {/* Success Message */}
-        <Text style={[styles.successTitle, { color: colors.textWhite }]}>Xác thực thành công!</Text>
-        <Text style={[styles.successSubtitle, { color: colors.textGray }]}>
-          Tài khoản của bạn đã được xác thực danh tính thành công
-        </Text>
-
-        {/* KYC Level Info */}
-        <View style={[styles.kycLevelCard, { backgroundColor: colors.darkSurface }]}>
-          <View style={styles.kycLevelHeader}>
-            <Ionicons name="shield-checkmark-outline" size={24} color={colors.greenSuccess} style={{ marginRight: 12 }} />
-            <Text style={[styles.kycLevelTitle, { color: colors.textWhite }]}>KYC Level 2</Text>
-            <View style={[styles.kycBadge, { backgroundColor: colors.greenSuccess + '20' }]}>
-              <Text style={[styles.kycBadgeText, { color: colors.greenSuccess }]}>Verified</Text>
-            </View>
-          </View>
-          
-          <View style={[styles.divider, { backgroundColor: colors.darkBorder }]} />
-          
-          <View style={styles.benefitsContainer}>
-            <Text style={[styles.benefitsTitle, { color: colors.textGray }]}>Quyền lợi của bạn:</Text>
-            
-            <View style={styles.benefitItem}>
-              <Ionicons name="cash-outline" size={18} color={colors.greenSuccess} style={styles.benefitIcon} />
-              <Text style={[styles.benefitText, { color: colors.textWhite }]}>Vay tối đa 50.000.000 VNĐ</Text>
-            </View>
-
-            <View style={styles.benefitItem}>
-              <Ionicons name="bar-chart-outline" size={18} color={colors.accentBlue} style={styles.benefitIcon} />
-              <Text style={[styles.benefitText, { color: colors.textWhite }]}>Đầu tư không giới hạn</Text>
-            </View>
-
-            <View style={styles.benefitItem}>
-              <Ionicons name="flash-outline" size={18} color={colors.yellowWarning} style={styles.benefitIcon} />
-              <Text style={[styles.benefitText, { color: colors.textWhite }]}>Giải ngân trong 24h</Text>
-            </View>
-
-            <View style={styles.benefitItem}>
-              <Ionicons name="lock-closed-outline" size={18} color={colors.textGray} style={styles.benefitIcon} />
-              <Text style={[styles.benefitText, { color: colors.textWhite }]}>Bảo mật thông tin cá nhân</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Next Steps */}
-        <View style={[styles.nextStepsCard, { backgroundColor: colors.accentBlue + '15' }]}>
-          <Text style={[styles.nextStepsTitle, { color: colors.accentBlue }]}>Bước tiếp theo</Text>
-          <Text style={[styles.nextStepsText, { color: colors.textGray }]}>
-            Bạn có thể bắt đầu tạo khoản vay hoặc đầu tư ngay bây giờ!
-          </Text>
-        </View>
-      </View>
-
-      {/* Bottom Actions */}
-      <View style={styles.bottomContainer}>
-        <Button title="Về trang chủ" onPress={handleDone} />
-        
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => {
-            navigation.reset({
-              index: 0,
-              routes: [
-                { name: 'Main' },
-                { name: 'CreateLoan' },
-              ],
-            });
-          }}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
         >
-          <Text style={[styles.secondaryButtonText, { color: colors.accentBlue }]}>Tạo khoản vay ngay</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+          {/* ─── Success Icon ─── */}
+          <View style={styles.iconWrapper}>
+            <Animated.View
+              style={[
+                styles.pulseRing,
+                { borderColor: '#8b5cf6', transform: [{ scale: pulse1 }], opacity: fadeAnim },
+              ]}
+            />
+            <Animated.View
+              style={[
+                styles.pulseRing,
+                styles.pulseRing2,
+                { borderColor: '#6366f1', transform: [{ scale: pulse2 }], opacity: fadeAnim },
+              ]}
+            />
+            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+              <LinearGradient
+                colors={['#4f46e5', '#7c3aed', '#9333ea']}
+                style={styles.iconCircle}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Ionicons name="shield-checkmark" size={52} color="#fff" />
+              </LinearGradient>
+            </Animated.View>
+          </View>
+
+          {/* ─── Title block ─── */}
+          <Animated.View
+            style={[
+              styles.titleBlock,
+              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+            ]}
+          >
+            <Text style={styles.title}>Xác thực thành công!</Text>
+            <View style={styles.badge}>
+              <Ionicons name="ribbon-outline" size={13} color="#a78bfa" />
+              <Text style={styles.badgeText}>KYC Level 2 · Verified</Text>
+            </View>
+            <Text style={styles.subtitle}>
+              Danh tính của bạn đã được xác minh. Toàn bộ tính năng P2P Lending đã được mở khoá.
+            </Text>
+          </Animated.View>
+
+          {/* ─── Benefits 2×2 grid ─── */}
+          <Animated.View
+            style={[
+              styles.benefitsGrid,
+              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+            ]}
+          >
+            {BENEFITS.map((item, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.benefitCard,
+                  { backgroundColor: 'rgba(255,255,255,0.05)', borderColor: item.color + '30' },
+                ]}
+              >
+                <View style={[styles.benefitIconBox, { backgroundColor: item.color + '20' }]}>
+                  <Ionicons name={item.icon as any} size={22} color={item.color} />
+                </View>
+                <Text style={styles.benefitLabel}>{item.label}</Text>
+                <Text style={styles.benefitValue}>{item.value}</Text>
+              </View>
+            ))}
+          </Animated.View>
+
+          {/* ─── Info strip ─── */}
+          <Animated.View
+            style={[
+              styles.infoStrip,
+              { opacity: fadeAnim },
+            ]}
+          >
+            <Ionicons name="information-circle-outline" size={18} color="#818cf8" />
+            <Text style={styles.infoText}>
+              Bạn có thể tạo khoản vay hoặc bắt đầu đầu tư ngay bây giờ
+            </Text>
+          </Animated.View>
+        </ScrollView>
+
+        {/* ─── Footer buttons ─── */}
+        <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
+          <TouchableOpacity
+            onPress={() =>
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Main' }, { name: 'CreateLoan' }],
+              })
+            }
+            activeOpacity={0.85}
+            style={styles.primaryBtnWrapper}
+          >
+            <LinearGradient
+              colors={['#4f46e5', '#7c3aed']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.primaryBtn}
+            >
+              <Ionicons name="add-circle-outline" size={20} color="#fff" />
+              <Text style={styles.primaryBtnText}>Tạo khoản vay ngay</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Main' }] })}
+            activeOpacity={0.8}
+            style={styles.secondaryBtn}
+          >
+            <Ionicons name="home-outline" size={18} color="rgba(255,255,255,0.55)" />
+            <Text style={styles.secondaryBtnText}>Về trang chủ</Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+      </SafeAreaView>
+    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
+  container: { flex: 1 },
+  safeArea:  { flex: 1 },
+
+  scrollContent: {
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 40,
+    paddingTop: 48,
+    paddingBottom: 16,
   },
-  successIconContainer: {
-    marginBottom: 32,
-  },
-  successCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+
+  // ─── Icon ───
+  iconWrapper: {
+    width: 130,
+    height: 130,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 36,
   },
-  successInnerCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  pulseRing: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    borderWidth: 2,
+  },
+  pulseRing2: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+  },
+  iconCircle: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.55,
+    shadowRadius: 18,
+    elevation: 14,
   },
-  checkmarkIcon: {
-    fontSize: 40,
-    fontWeight: 'bold',
+
+  // ─── Title ───
+  titleBlock: {
+    alignItems: 'center',
+    marginBottom: 28,
   },
-  successTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 12,
+  title: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 10,
+    letterSpacing: -0.5,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(139,92,246,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.35)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    marginBottom: 14,
+  },
+  badgeText: {
+    color: '#a78bfa',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
     textAlign: 'center',
+    lineHeight: 22,
+    paddingHorizontal: 8,
   },
-  successSubtitle: {
-    fontSize: 15,
-    textAlign: 'center',
-    marginBottom: 32,
-  },
-  kycLevelCard: {
+
+  // ─── Benefits grid ───
+  benefitsGrid: {
     width: '100%',
-    borderRadius: 16,
-    padding: 20,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
     marginBottom: 16,
   },
-  kycLevelHeader: {
-    flexDirection: 'row',
+  benefitCard: {
+    width: '47.5%',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  benefitIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 11,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  kycLevelIcon: {
-    marginRight: 12,
-  },
-  kycLevelTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    flex: 1,
-  },
-  kycBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  kycBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  divider: {
-    height: 1,
-    marginVertical: 16,
-  },
-  benefitsContainer: {},
-  benefitsTitle: {
-    fontSize: 14,
+  benefitLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.45)',
     fontWeight: '500',
-    marginBottom: 12,
   },
-  benefitItem: {
+  benefitValue: {
+    fontSize: 13,
+    color: '#fff',
+    fontWeight: '700',
+  },
+
+  // ─── Info strip ───
+  infoStrip: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
-  },
-  benefitIcon: {
-    marginRight: 12,
-    width: 24,
-  },
-  benefitText: {
-    fontSize: 14,
-    flex: 1,
-  },
-  nextStepsCard: {
-    width: '100%',
+    gap: 10,
+    backgroundColor: 'rgba(99,102,241,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.25)',
     borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
+    padding: 14,
   },
-  nextStepsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  nextStepsText: {
+  infoText: {
+    flex: 1,
     fontSize: 13,
-    textAlign: 'center',
+    color: 'rgba(255,255,255,0.6)',
+    lineHeight: 19,
   },
-  bottomContainer: {
-    padding: 16,
-    paddingBottom: 24,
+
+  // ─── Footer ───
+  footer: {
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+    gap: 10,
   },
-  secondaryButton: {
-    marginTop: 12,
-    paddingVertical: 14,
+  primaryBtnWrapper: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 7,
+  },
+  primaryBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 16,
+    gap: 8,
   },
-  secondaryButtonText: {
+  primaryBtnText: {
+    color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  secondaryBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  secondaryBtnText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 15,
+    fontWeight: '500',
   },
 });
 

@@ -9,7 +9,6 @@ import {
   Easing,
   ActivityIndicator,
   Image,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -117,9 +116,8 @@ const KYCFaceScanScreen: React.FC<KYCFaceScanScreenProps> = ({ navigation, route
         const completeRes = await kycApi.completeKYC();
         if (completeRes.success) {
           setProgress(100);
-          Alert.alert('Thành công', 'Xác thực khuôn mặt thành công!', [
-            { text: 'Tiếp tục', onPress: () => navigation.navigate('KYCSuccess') },
-          ]);
+          setInstruction('Xác thực thành công!');
+          setTimeout(() => navigation.replace('KYCSuccess'), 800);
         }
       } else {
         Alert.alert(

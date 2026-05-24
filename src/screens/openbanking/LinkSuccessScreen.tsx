@@ -54,9 +54,9 @@ const LinkSuccessScreen: React.FC<LinkSuccessScreenProps> = ({ navigation, route
   const slideAnim   = useRef(new Animated.Value(40)).current;
   const pulse1      = useRef(new Animated.Value(1)).current;
   const pulse2      = useRef(new Animated.Value(1)).current;
+  const cardAnims   = useRef(FEATURES.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
-    // Sequence: icon pop → content fade-slide
     Animated.sequence([
       Animated.spring(scaleAnim, {
         toValue: 1,
@@ -65,34 +65,22 @@ const LinkSuccessScreen: React.FC<LinkSuccessScreenProps> = ({ navigation, route
         useNativeDriver: true,
       }),
       Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }),
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
       ]),
+      // Stagger feature cards
+      Animated.stagger(
+        120,
+        cardAnims.map(a => Animated.spring(a, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }))
+      ),
     ]).start();
 
-    // Pulse rings
     const loopPulse = (anim: Animated.Value, delay: number) =>
       Animated.loop(
         Animated.sequence([
           Animated.delay(delay),
-          Animated.timing(anim, {
-            toValue: 1.35,
-            duration: 1200,
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 1200,
-            useNativeDriver: true,
-          }),
+          Animated.timing(anim, { toValue: 1.35, duration: 1200, useNativeDriver: true }),
+          Animated.timing(anim, { toValue: 1,    duration: 1200, useNativeDriver: true }),
         ])
       ).start();
 
@@ -156,19 +144,15 @@ const LinkSuccessScreen: React.FC<LinkSuccessScreenProps> = ({ navigation, route
             </Text>
           </Animated.View>
 
-          {/* Feature cards */}
-          <Animated.View
-            style={[
-              styles.featuresContainer,
-              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
-            ]}
-          >
+          {/* Feature cards — staggered */}
+          <View style={styles.featuresContainer}>
             {FEATURES.map((item, index) => (
-              <View
+              <Animated.View
                 key={index}
                 style={[
                   styles.featureCard,
                   { backgroundColor: 'rgba(255,255,255,0.05)', borderColor: item.color + '25' },
+                  { opacity: cardAnims[index], transform: [{ translateY: cardAnims[index].interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] },
                 ]}
               >
                 <View style={[styles.featureIconBox, { backgroundColor: item.color + '20' }]}>
@@ -179,9 +163,9 @@ const LinkSuccessScreen: React.FC<LinkSuccessScreenProps> = ({ navigation, route
                   <Text style={styles.featureSubtitle}>{item.subtitle}</Text>
                 </View>
                 <Ionicons name="checkmark-circle" size={18} color={item.color} />
-              </View>
+              </Animated.View>
             ))}
-          </Animated.View>
+          </View>
         </View>
 
         {/* ─── Footer buttons ─── */}
@@ -294,7 +278,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.5)',
+    color: 'rgba(255,255,255,0.65)',
     textAlign: 'center',
     lineHeight: 22,
     paddingHorizontal: 8,
@@ -374,7 +358,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.1)',
   },
   secondaryBtnText: {
-    color: 'rgba(255,255,255,0.55)',
+    color: 'rgba(255,255,255,0.7)',
     fontSize: 15,
     fontWeight: '500',
   },

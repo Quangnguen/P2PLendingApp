@@ -310,11 +310,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
         {/* Link Bank CTA */}
         {(!connections || connections.length === 0) && (
-          <Card style={{ ...styles.linkBankCard, backgroundColor: colors.accentBlue + '15', borderColor: colors.accentBlue }}>
+          <Card style={{ ...styles.linkBankCard, backgroundColor: colors.accentBlue + '12', borderColor: colors.accentBlue + '60' }}>
             <View style={styles.linkBankContent}>
-              <View style={[styles.linkBankIcon, { backgroundColor: colors.accentBlue + '30' }]}>
-                <Ionicons name="business" size={24} color={colors.accentBlue} />
-              </View>
+              <LinearGradient
+                colors={['#1d4ed8', '#3b82f6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.linkBankIcon}
+              >
+                <Ionicons name="business" size={22} color="#fff" />
+              </LinearGradient>
               <View style={styles.linkBankText}>
                 <Text style={[styles.linkBankTitle, { color: colors.textWhite }]}>Liên kết ngân hàng</Text>
                 <Text style={[styles.linkBankSubtitle, { color: colors.textGray }]}>
@@ -323,10 +328,18 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               </View>
             </View>
             <TouchableOpacity
-              style={[styles.linkBankButton, { backgroundColor: colors.accentBlue }]}
               onPress={() => navigation.navigate('LinkBank')}
+              activeOpacity={0.85}
+              style={styles.linkBankBtnWrapper}
             >
-              <Text style={[styles.linkBankButtonText, { color: colors.textWhite }]}>Kết nối ngay →</Text>
+              <LinearGradient
+                colors={['#1d4ed8', '#2563eb', '#3b82f6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.linkBankButton}
+              >
+                <Text style={styles.linkBankButtonText}>Kết nối ngay</Text>
+              </LinearGradient>
             </TouchableOpacity>
           </Card>
         )}
@@ -657,12 +670,11 @@ const styles = StyleSheet.create({
   linkBankIcon: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
-
   linkBankText: {
     flex: 1,
   },
@@ -675,14 +687,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  linkBankBtnWrapper: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    elevation: 6,
+  },
   linkBankButton: {
-    borderRadius: 8,
-    paddingVertical: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 8,
   },
   linkBankButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+    flex: 1,
+    textAlign: 'center',
   },
   section: {
     marginBottom: 24,

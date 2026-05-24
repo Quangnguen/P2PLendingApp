@@ -1,4 +1,4 @@
-import { Alert, Image, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View, TouchableOpacity, ScrollView } from "react-native";
+import { Image, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View, TouchableOpacity, ScrollView } from "react-native";
 import { useTheme } from "@/providers";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Bank } from "@/types";
@@ -68,18 +68,11 @@ const VNLinkBankScreen = () => {
         }));
 
         if (verifyOtpLink.fulfilled.match(resultAction)) {
-            // Trigger tính lại điểm tín dụng ngay sau khi liên kết thành công (async, không block)
-            dispatch(recalculateCreditScore()).catch(() => {}); // silent fail nếu lỗi
-            dispatch(loadConnections()); // Reload danh sách account ngay
-
-            Alert.alert('Thành công', 'Liên kết tài khoản thành công!', [
-                {
-                    text: 'OK',
-                    onPress: () => {
-                        navigation.navigate('Main', { screen: 'HomeTab' } as any);
-                    }
-                }
-            ]);
+            dispatch(recalculateCreditScore()).catch(() => {});
+            dispatch(loadConnections());
+            navigation.replace('LinkSuccess', {
+                bankName: bank.shortName || bank.name || 'Ngân hàng',
+            });
         }
     }
 

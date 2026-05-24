@@ -157,8 +157,8 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
     );
   }
 
-  const fundingPercentage = loan.amount > 0 ? Math.min((loan.funded / loan.amount) * 100, 100) : 0;
-  const remainingAmount = Math.max(loan.amount - loan.funded, 0);
+  const fundingPercentage = loan.amount > 0 ? Math.min(((loan.funded ?? 0) / loan.amount) * 100, 100) : 0;
+  const remainingAmount = Math.max(loan.amount - (loan.funded ?? 0), 0);
 
   // Check if current user is the borrower (owner of this loan/request)
   const myUserId = user?._id ? String(user._id) : null;
