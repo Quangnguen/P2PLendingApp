@@ -91,11 +91,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       }
 
       // 4. Fetch Unread Notifications
+      // Backend returns { notifications: [...], unreadCount: n } directly (no .data wrapper)
       try {
         const notiRes = await notificationApi.getMyNotifications(1, 0);
-        if (notiRes && notiRes.data) {
-          setUnreadNotifications(notiRes.data.unreadCount || 0);
-        }
+        setUnreadNotifications(notiRes?.unreadCount || 0);
       } catch (notiErr) {
         console.log('Error fetching notifications:', notiErr);
       }

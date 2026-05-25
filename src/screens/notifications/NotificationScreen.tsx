@@ -26,9 +26,10 @@ const NotificationScreen: React.FC = () => {
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const response = await notificationApi.getMyNotifications(50, 0);
-      setNotifications(response.data?.notifications || []);
-      setUnreadCount(response.data?.unreadCount || 0);
+      // Backend returns { notifications: [...], unreadCount: n } directly (no .data wrapper)
+      const result = await notificationApi.getMyNotifications(50, 0);
+      setNotifications(result.notifications || []);
+      setUnreadCount(result.unreadCount ?? 0);
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {

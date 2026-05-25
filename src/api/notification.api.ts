@@ -1,5 +1,4 @@
 import apiClient from './client';
-import { ApiResponse } from '../types/auth.types';
 
 export interface NotificationItem {
   _id: string;
@@ -11,21 +10,28 @@ export interface NotificationItem {
   createdAt: string;
 }
 
+// Backend returns { notifications: NotificationItem[], unreadCount: number } directly
+// (no ApiResponse wrapper — controller does `return service.getMyNotifications(...)`)
+export interface NotificationsPayload {
+  notifications: NotificationItem[];
+  unreadCount: number;
+}
+
 export const notificationApi = {
-  getMyNotifications: async (limit = 20, skip = 0) => {
-    const response = await apiClient.get<ApiResponse<{ notifications: NotificationItem[], unreadCount: number }>>(
+  getMyNotifications: async (limit = 20, skip = 0): Promise<NotificationsPayload> => {
+    const response = await apiClient.get<NotificationsPayload>(
       `/notifications?limit=${limit}&skip=${skip}`
     );
     return response.data;
   },
 
   markAsRead: async (id: string) => {
-    const response = await apiClient.put<ApiResponse<any>>(`/notifications/${id}/read`);
+    const response = await apiClient.put<{ success: boolean }>(`/notifications/${id}/read`);
     return response.data;
   },
 
   markAllAsRead: async () => {
-    const response = await apiClient.put<ApiResponse<any>>('/notifications/read-all');
+    const response = await apiClient.put<{ success: boolean }>('/notifications/read-all');
     return response.data;
   },
 };
