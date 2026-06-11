@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '@/providers';
+import { ConfirmModal } from '@/components/common';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 const SecurityScreen: React.FC = () => {
@@ -19,6 +20,7 @@ const SecurityScreen: React.FC = () => {
 
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [is2FAEnabled, setIs2FAEnabled] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const toggleBiometric = () => {
     setIsBiometricEnabled(previousState => !previousState);
@@ -44,20 +46,7 @@ const SecurityScreen: React.FC = () => {
     Alert.alert('Quản lý thiết bị', 'Tính năng đang được phát triển.');
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Cảnh báo',
-      'Bạn có chắc chắn muốn xóa tài khoản? Hành động này không thể hoàn tác và tất cả dữ liệu của bạn sẽ bị mất.',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        { 
-          text: 'Xóa tài khoản', 
-          style: 'destructive',
-          onPress: () => Alert.alert('Thông báo', 'Vui lòng liên hệ bộ phận hỗ trợ để xóa tài khoản.')
-        }
-      ]
-    );
-  };
+  const handleDeleteAccount = () => setShowDeleteModal(true);
 
   const SettingItem = ({ 
     icon, 
@@ -168,6 +157,20 @@ const SecurityScreen: React.FC = () => {
         </View>
 
       </ScrollView>
+
+      <ConfirmModal
+        visible={showDeleteModal}
+        title="Xóa tài khoản"
+        message={'Hành động này không thể hoàn tác và toàn bộ dữ liệu của bạn sẽ bị mất.\n\nVui lòng liên hệ bộ phận hỗ trợ để tiến hành xóa tài khoản.'}
+        confirmText="Liên hệ hỗ trợ"
+        cancelText="Hủy"
+        variant="danger"
+        onConfirm={() => {
+          setShowDeleteModal(false);
+          Alert.alert('Hỗ trợ', 'Email: support@p2plending.vn\nHotline: 1900 xxxx');
+        }}
+        onCancel={() => setShowDeleteModal(false)}
+      />
     </SafeAreaView>
   );
 };

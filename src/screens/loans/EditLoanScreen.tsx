@@ -23,6 +23,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { useTheme } from '@/providers';
+import { useToast } from '@/store';
+import { ConfirmModal } from '@/components/common';
 import { RootStackParamList } from '@/navigation/types';
 import { LOAN_CONFIG } from '@/utils/constants';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -34,6 +36,7 @@ type EditLoanScreenProps = {
 
 const EditLoanScreen: React.FC<EditLoanScreenProps> = ({ navigation, route }) => {
   const { colors } = useTheme();
+  const toast = useToast();
   const { requestId, currentData } = route.params;
 
   const [amount, setAmount] = useState(currentData.amount.toString());
@@ -42,6 +45,7 @@ const EditLoanScreen: React.FC<EditLoanScreenProps> = ({ navigation, route }) =>
   const [purpose, setPurpose] = useState(currentData.purpose);
   const [description, setDescription] = useState(currentData.description);
   const [isLoading, setIsLoading] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const validateForm = (): boolean => {
@@ -58,40 +62,32 @@ const EditLoanScreen: React.FC<EditLoanScreenProps> = ({ navigation, route }) =>
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!validateForm()) return;
+    setShowConfirmModal(true);
+  };
 
-    Alert.alert(
-      'Xác nhận cập nhật',
-      'Bạn có chắc muốn cập nhật yêu cầu vay này?',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Cập nhật',
-          onPress: async () => {
-            setIsLoading(true);
-            try {
-              const { loanApi } = await import('@/api/loan.api');
-              await loanApi.updateRequest(requestId, {
-                loanAmount: parseFloat(amount),
-                interestRate: parseFloat(interestRate),
-                durationDays: duration,
-                purpose,
-                purposeDescription: description,
-              });
-              Alert.alert('Thành công', 'Đã cập nhật yêu cầu vay.', [
-                { text: 'OK', onPress: () => navigation.goBack() },
-              ]);
-            } catch (error: any) {
-              const msg = error?.response?.data?.message || 'Không thể cập nhật yêu cầu vay';
-              Alert.alert('Lỗi', msg);
-            } finally {
-              setIsLoading(false);
-            }
-          },
-        },
-      ],
-    );
+  const confirmSave = async () => {
+    setIsLoading(true);
+    try {
+      const { loanApi } = await import('@/api/loan.api');
+      await loanApi.updateRequest(requestId, {
+        loanAmount: parseFloat(amount),
+        interestRate: parseFloat(interestRate),
+        durationDays: duration,
+        purpose,
+        purposeDescription: description,
+      });
+      setShowConfirmModal(false);
+      toast.success('Đã cập nhật yêu cầu vay thành công.');
+      navigation.goBack();
+    } catch (error: any) {
+      setShowConfirmModal(false);
+      const msg = error?.response?.data?.message || 'Không thể cập nhật yêu cầu vay';
+      toast.error(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const renderDurationChip = (days: number, label: string) => {
@@ -258,6 +254,18 @@ const EditLoanScreen: React.FC<EditLoanScreenProps> = ({ navigation, route }) =>
           )}
         </TouchableOpacity>
       </View>
+
+      <ConfirmModal
+        visible={showConfirmModal}
+        title="Cập nhật yêu cầu vay"
+        message="Bạn có chắc muốn lưu các thay đổi này?"
+        confirmText="Lưu"
+        cancelText="Hủy"
+        variant="info"
+        loading={isLoading}
+        onConfirm={confirmSave}
+        onCancel={() => setShowConfirmModal(false)}
+      />
     </SafeAreaView>
   );
 };

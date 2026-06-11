@@ -3,7 +3,8 @@ import { NavigationContainer, DefaultTheme, Theme } from '@react-navigation/nati
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet } from 'react-native';
-import { useAppDispatch, useAuth, checkAuth, hydrateConnectionsFromCache, loadConnections } from '../store';
+import { useAppDispatch, useAuth, checkAuth, hydrateConnectionsFromCache, loadConnections, resetAuth } from '../store';
+import { setUnauthorizedHandler } from '../api/client';
 import { useTheme } from '../providers';
 import { RootStackParamList, BottomTabParamList } from './types';
 import { Loading } from '../components/common';
@@ -153,12 +154,15 @@ const AppNavigator: React.FC = () => {
   const { colors, isDark } = useTheme();
   const [isLoading, setIsLoading] = useState(true);
 
+  // Đăng ký handler 401 — khi token hết hạn, reset auth → navigator tự về Auth stack
+  useEffect(() => {
+    setUnauthorizedHandler(() => dispatch(resetAuth()));
+  }, [dispatch]);
+
   const initAuth = useCallback(async () => {
     const result = await dispatch(checkAuth());
-    // Nếu user đã đăng nhập, load connections từ cache ngay lập tức
     if (result.payload) {
       dispatch(hydrateConnectionsFromCache());
-      // Sau đó sync với API ở background
       dispatch(loadConnections());
     }
     setIsLoading(false);

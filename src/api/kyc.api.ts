@@ -44,7 +44,7 @@ export const kycApi = {
 
     const response = await apiClient.post('/kyc/recognize-id', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 30000,
+      timeout: 60000, // 60s: FPT AI (15s) + mutex wait (15s) + Tesseract + Cloudinary
     });
 
     return response.data;

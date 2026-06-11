@@ -155,7 +155,6 @@ const KYCCaptureIDScreen: React.FC<KYCCaptureIDScreenProps> = ({
           // Gộp dữ liệu: ưu tiên mặt trước cho CÁC TRƯỜNG CÁ NHÂN
           // Mặt sau thường chỉ có issue_date, issue_loc — không có name/dob/sex/...
           const mergedInfo = {
-            // Thông tin cá nhân: luôn ưu tiên mặt trước
             id: frontIdInfo.id || response.data.id || '',
             name: frontIdInfo.name || response.data.name || '',
             dob: frontIdInfo.dob || response.data.dob || '',
@@ -166,7 +165,6 @@ const KYCCaptureIDScreen: React.FC<KYCCaptureIDScreenProps> = ({
             doe: frontIdInfo.doe || response.data.doe || '',
             type: frontIdInfo.type || response.data.type || 'CCCD',
             features: frontIdInfo.features || response.data.features || '',
-            // Ngày cấp / Nơi cấp: thường nằm trên mặt sau
             issue_date: response.data.issue_date || frontIdInfo.issue_date || '',
             issue_loc: response.data.issue_loc || frontIdInfo.issue_loc || '',
             confidence: response.data.confidence || frontIdInfo.confidence,
@@ -175,12 +173,74 @@ const KYCCaptureIDScreen: React.FC<KYCCaptureIDScreenProps> = ({
           navigation.navigate('KYCVerifyInfo', {
             idInfo: mergedInfo,
             frontImageUri: frontImageUri,
-            backImageUri: capturedImage.uri
+            backImageUri: capturedImage.uri,
           });
         }
+      } else if (!isFrontSide) {
+        // Backend trả success=false cho mặt sau → vẫn cho tiếp tục
+        toast.warning(
+          'Không đọc được thông tin mặt sau. Bạn có thể điền thủ công ở bước tiếp theo.',
+          'Bỏ qua mặt sau',
+        );
+        const frontIdInfo = route.params.frontIdInfo || {};
+        navigation.navigate('KYCVerifyInfo', {
+          idInfo: {
+            id: frontIdInfo.id || '',
+            name: frontIdInfo.name || '',
+            dob: frontIdInfo.dob || '',
+            sex: frontIdInfo.sex || '',
+            nationality: frontIdInfo.nationality || 'Việt Nam',
+            home: frontIdInfo.home || '',
+            address: frontIdInfo.address || '',
+            doe: frontIdInfo.doe || '',
+            type: frontIdInfo.type || 'CCCD',
+            features: frontIdInfo.features || '',
+            issue_date: '',
+            issue_loc: '',
+          },
+          frontImageUri: route.params.frontImageUri || '',
+          backImageUri: capturedImage?.uri || '',
+        });
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Không nhận dạng được. Vui lòng chụp lại rõ hơn.', 'Lỗi nhận dạng');
+      const status = error.response?.status;
+      const message = error.response?.data?.message || error.message;
+
+      if (status === 409) {
+        // CCCD đã tồn tại — chặn hoàn toàn, reset ảnh
+        setCapturedImage(null);
+        toast.error(message, 'CCCD đã được đăng ký');
+      } else if (!isFrontSide) {
+        // Mặt sau lỗi OCR/timeout: issue_date và issue_loc có thể điền thủ công
+        // → vẫn tiếp tục với data mặt trước, không chặn user
+        toast.warning(
+          'Không nhận dạng được mặt sau. Bạn có thể điền thông tin thủ công ở bước tiếp theo.',
+          'Tiếp tục với ảnh mặt trước',
+        );
+        const frontIdInfo = route.params.frontIdInfo || {};
+        const frontImageUri = route.params.frontImageUri || '';
+        navigation.navigate('KYCVerifyInfo', {
+          idInfo: {
+            id: frontIdInfo.id || '',
+            name: frontIdInfo.name || '',
+            dob: frontIdInfo.dob || '',
+            sex: frontIdInfo.sex || '',
+            nationality: frontIdInfo.nationality || 'Việt Nam',
+            home: frontIdInfo.home || '',
+            address: frontIdInfo.address || '',
+            doe: frontIdInfo.doe || '',
+            type: frontIdInfo.type || 'CCCD',
+            features: frontIdInfo.features || '',
+            issue_date: '',
+            issue_loc: '',
+          },
+          frontImageUri: frontImageUri,
+          backImageUri: capturedImage?.uri || '',
+        });
+      } else {
+        // Mặt trước lỗi → bắt buộc chụp lại (cần số CCCD)
+        toast.error(message || 'Không nhận dạng được. Vui lòng chụp lại rõ hơn.', 'Lỗi nhận dạng');
+      }
     } finally {
       setIsProcessing(false);
     }

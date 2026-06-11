@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { Card } from '@/components/common';
+import { Card, KYCRequiredModal } from '@/components/common';
 import { useTheme } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
 import { formatCurrency, formatDate } from '@/utils/formatters';
@@ -29,7 +29,7 @@ interface LoanItem {
   title: string;
   amount: number;
   interestRate: number;
-  status: 'pending' | 'approved' | 'active' | 'overdue' | 'completed' | 'rejected';
+  status: 'pending' | 'approved' | 'active' | 'overdue' | 'defaulted' | 'liquidated' | 'completed' | 'rejected';
   dueDate: Date;
   borrower?: string;
   lender?: string;
@@ -38,13 +38,15 @@ interface LoanItem {
 type StatusFilter = LoanItem['status'] | 'all';
 
 const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
-  { key: 'all', label: 'Tất cả' },
-  { key: 'pending', label: 'Đang chờ' },
-  { key: 'approved', label: 'Đã duyệt' },
-  { key: 'active', label: 'Hoạt động' },
-  { key: 'overdue', label: 'Quá hạn' },
+  { key: 'all',       label: 'Tất cả' },
+  { key: 'pending',   label: 'Đang chờ' },
+  { key: 'approved',  label: 'Đã duyệt' },
+  { key: 'active',    label: 'Hoạt động' },
+  { key: 'overdue',   label: 'Quá hạn' },
+  { key: 'defaulted', label: 'Vi phạm' },
+  { key: 'liquidated',label: 'Thanh lý' },
   { key: 'completed', label: 'Hoàn thành' },
-  { key: 'rejected', label: 'Đã hủy' },
+  { key: 'rejected',  label: 'Đã hủy' },
 ];
 
 const toNum = (val: any): number => {
@@ -64,6 +66,7 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
   const [borrowingLoans, setBorrowingLoans] = useState<LoanItem[]>([]);
   const [lendingLoans, setLendingLoans] = useState<LoanItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showKYCModal, setShowKYCModal] = useState(false);
 
   useEffect(() => {
     setStatusFilter('all');
@@ -121,7 +124,9 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
             status: (loan.status === 'repaid' ? 'completed'
               : loan.status === 'active' ? 'active'
               : loan.status === 'overdue' ? 'overdue'
-              : loan.status === 'cancelled' || loan.status === 'liquidated' ? 'rejected'
+              : loan.status === 'defaulted' ? 'defaulted'
+              : loan.status === 'liquidated' ? 'liquidated'
+              : loan.status === 'cancelled' ? 'rejected'
               : 'active') as LoanItem['status'],
             dueDate: new Date(loan.dueDate || Date.now()),
             lender: loan.lenderId?.fullName || 'N/A',
@@ -141,7 +146,9 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
             status: (loan.status === 'repaid' ? 'completed'
               : loan.status === 'active' ? 'active'
               : loan.status === 'overdue' ? 'overdue'
-              : loan.status === 'cancelled' || loan.status === 'liquidated' ? 'rejected'
+              : loan.status === 'defaulted' ? 'defaulted'
+              : loan.status === 'liquidated' ? 'liquidated'
+              : loan.status === 'cancelled' ? 'rejected'
               : 'active') as LoanItem['status'],
             dueDate: new Date(loan.dueDate || Date.now()),
             borrower: loan.borrowerId?.fullName || 'N/A',
@@ -165,37 +172,43 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
 
   const getFilterColor = (key: StatusFilter): string => {
     switch (key) {
-      case 'pending':   return colors.yellowWarning;
-      case 'approved':  return '#60a5fa';
-      case 'active':    return colors.greenSuccess;
-      case 'overdue':   return colors.redError;
-      case 'completed': return colors.accentBlue;
-      case 'rejected':  return colors.textGray;
-      default:          return colors.accentBlue;
+      case 'pending':    return colors.yellowWarning;
+      case 'approved':   return '#60a5fa';
+      case 'active':     return colors.greenSuccess;
+      case 'overdue':    return colors.redError;
+      case 'defaulted':  return '#dc2626';
+      case 'liquidated': return '#7f1d1d';
+      case 'completed':  return colors.accentBlue;
+      case 'rejected':   return colors.textGray;
+      default:           return colors.accentBlue;
     }
   };
 
   const getStatusColor = (status: LoanItem['status']) => {
     switch (status) {
-      case 'pending':   return colors.yellowWarning;
-      case 'approved':  return '#60a5fa';
-      case 'active':    return colors.greenSuccess;
-      case 'overdue':   return colors.redError;
-      case 'completed': return colors.accentBlue;
-      case 'rejected':  return colors.textGray;
-      default:          return colors.textGray;
+      case 'pending':    return colors.yellowWarning;
+      case 'approved':   return '#60a5fa';
+      case 'active':     return colors.greenSuccess;
+      case 'overdue':    return colors.redError;
+      case 'defaulted':  return '#dc2626';
+      case 'liquidated': return '#7f1d1d';
+      case 'completed':  return colors.accentBlue;
+      case 'rejected':   return colors.textGray;
+      default:           return colors.textGray;
     }
   };
 
   const getStatusText = (status: LoanItem['status']) => {
     switch (status) {
-      case 'pending':   return 'Đang chờ duyệt';
-      case 'approved':  return 'Chờ giải ngân';
-      case 'active':    return 'Đang hoạt động';
-      case 'overdue':   return 'Quá hạn';
-      case 'completed': return 'Hoàn thành';
-      case 'rejected':  return 'Đã hủy';
-      default:          return status;
+      case 'pending':    return 'Đang chờ duyệt';
+      case 'approved':   return 'Chờ giải ngân';
+      case 'active':     return 'Đang hoạt động';
+      case 'overdue':    return 'Quá hạn';
+      case 'defaulted':  return 'Vi phạm hợp đồng';
+      case 'liquidated': return 'Đã thanh lý';
+      case 'completed':  return 'Hoàn thành';
+      case 'rejected':   return 'Đã hủy';
+      default:           return status;
     }
   };
 
@@ -257,10 +270,7 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
           style={[styles.createButton, { backgroundColor: colors.accentBlue }]}
           onPress={() => {
             if (user?.kycStatus !== 'verified') {
-              Alert.alert('Yêu cầu xác thực', 'Bạn cần hoàn thành xác thực danh tính (KYC) trước khi tạo yêu cầu vay.', [
-                { text: 'Để sau', style: 'cancel' },
-                { text: 'Xác thực ngay', onPress: () => navigation.navigate('KYCVerification' as any) },
-              ]);
+              setShowKYCModal(true);
               return;
             }
             if (connections.length === 0) {
@@ -371,6 +381,15 @@ const LoansScreen: React.FC<LoansScreenProps> = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       )}
+      <KYCRequiredModal
+        visible={showKYCModal}
+        reason="loan"
+        onVerify={() => {
+          setShowKYCModal(false);
+          navigation.navigate('KYCVerification' as any);
+        }}
+        onDismiss={() => setShowKYCModal(false)}
+      />
     </SafeAreaView>
   );
 };

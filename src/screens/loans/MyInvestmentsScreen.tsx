@@ -39,7 +39,7 @@ interface InvestmentItem {
   amount: number;
   interestRate: number;
   duration: number;
-  status: 'active' | 'completed' | 'defaulted';
+  status: 'active' | 'completed' | 'defaulted' | 'liquidated';
   fundedDate: Date;
   dueDate: Date;
   expectedReturn: number;
@@ -49,10 +49,11 @@ interface InvestmentItem {
 
 const getStatusText = (status: InvestmentItem['status']): string => {
   switch (status) {
-    case 'active': return 'Đang hoạt động';
-    case 'completed': return 'Hoàn thành';
-    case 'defaulted': return 'Vỡ nợ';
-    default: return status;
+    case 'active':     return 'Đang hoạt động';
+    case 'completed':  return 'Hoàn thành';
+    case 'defaulted':  return 'Vi phạm hợp đồng';
+    case 'liquidated': return 'Đã thanh lý';
+    default:           return status;
   }
 };
 
@@ -85,9 +86,10 @@ const MyInvestmentsScreen: React.FC<MyInvestmentsScreenProps> = ({ navigation })
         const elapsed = now - startDate.getTime();
         const progress = Math.min(Math.max(Math.round((elapsed / totalDuration) * 100), 0), 100);
 
-        let status: 'active' | 'completed' | 'defaulted' = 'active';
+        let status: 'active' | 'completed' | 'defaulted' | 'liquidated' = 'active';
         if (loan.status === 'repaid') status = 'completed';
         else if (loan.status === 'defaulted') status = 'defaulted';
+        else if (loan.status === 'liquidated') status = 'liquidated';
 
         const principalAmt = toNum(loan.principalAmount);
         const totalInterest = toNum(loan.totalInterest);
@@ -147,10 +149,11 @@ const MyInvestmentsScreen: React.FC<MyInvestmentsScreenProps> = ({ navigation })
 
   const getStatusColor = useCallback((status: InvestmentItem['status']): string => {
     switch (status) {
-      case 'active': return colors.accentBlue;
-      case 'completed': return colors.greenSuccess;
-      case 'defaulted': return colors.redError;
-      default: return colors.textGray;
+      case 'active':     return colors.accentBlue;
+      case 'completed':  return colors.greenSuccess;
+      case 'defaulted':  return '#dc2626';
+      case 'liquidated': return '#7f1d1d';
+      default:           return colors.textGray;
     }
   }, [colors]);
 

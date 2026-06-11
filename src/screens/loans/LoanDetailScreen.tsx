@@ -12,13 +12,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
-import { Card, Button } from '@/components/common';
+import { Card, Button, ConfirmModal, KYCRequiredModal } from '@/components/common';
 import { useTheme } from '@/providers';
 import { useAuth, useOpenBanking } from '@/store';
 import { RootStackParamList } from '@/navigation/types';
 import { formatCurrency } from '@/utils/formatters';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useToast } from '@/store';
 
 type LoanDetailScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'LoanDetail'>;
@@ -33,9 +34,13 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
   const { user } = useAuth();
   const { connections } = useOpenBanking();
   const { loanId } = route.params;
+  const toast = useToast();
   const [loan, setLoan] = React.useState<any>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isDeleting, setIsDeleting] = React.useState(false);
+  const [showDeleteModal, setShowDeleteModal] = React.useState(false);
+  const [showKYCModal, setShowKYCModal] = React.useState(false);
+  const [debtInfo, setDebtInfo] = React.useState<{ hasDebt: boolean; count: number; totalAmount: number } | null>(null);
 
   // Helper: Safely convert MongoDB Decimal128 to number
   const toNum = (val: any): number => {
@@ -94,6 +99,7 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
         borrowerName: typeof d.borrowerId === 'object' ? (d.borrowerId?.fullName || 'Ẩn danh') : 'Ẩn danh',
         borrowerAvatar: typeof d.borrowerId === 'object' ? (d.borrowerId?.fullName || 'A').charAt(0) : 'A',
         borrowerId: borrowerId,
+        borrowerWallet: typeof d.borrowerId === 'object' ? (d.borrowerId?.walletAddress || null) : null,
         lenderId: lenderId,
         amount: principal,
         funded: toNum(d.amountPaid) || 0,
@@ -147,6 +153,25 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
     }, [fetchLoan])
   );
 
+  React.useEffect(() => {
+    if (!loan?.borrowerWallet || loan.borrowerId === (user?._id ? String(user._id) : null)) return;
+    const fetch = async () => {
+      try {
+        const { loanApi } = await import('@/api/loan.api');
+        const result = await loanApi.checkDebtTokens(loan.borrowerWallet);
+        const data = result?.data || result;
+        setDebtInfo({
+          hasDebt: data?.hasDebt ?? false,
+          count: data?.debtTokenCount ?? 0,
+          totalAmount: parseFloat(data?.totalDebtAmount ?? '0') || 0,
+        });
+      } catch {
+        // silently ignore — debt check is non-critical
+      }
+    };
+    fetch();
+  }, [loan?.borrowerWallet, loan?.borrowerId, user?._id]);
+
   if (isLoading || !loan) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.darkBackground }]} edges={['top']}>
@@ -182,64 +207,76 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
   // Check if this is a pending request (not yet funded)
   const isPending = loan.status === 'pending' || loan.status === 'approved' || loan.status === 'funding';
 
+  const getCreditScoreColor = (score: number) => {
+    if (score >= 750) return colors.greenSuccess;
+    if (score >= 650) return '#84cc16';
+    if (score >= 500) return colors.yellowWarning;
+    if (score >= 200) return '#f97316';
+    return colors.redError;
+  };
+
+  const getCreditScoreLabel = (score: number) => {
+    if (score >= 750) return 'Xuất sắc';
+    if (score >= 700) return 'Tốt';
+    if (score >= 650) return 'Khá';
+    if (score >= 500) return 'Trung bình';
+    if (score >= 400) return 'Yếu';
+    if (score >= 200) return 'Kém';
+    return 'Rất xấu';
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending': return colors.yellowWarning;
-      case 'approved': return colors.greenSuccess;
-      case 'funding': return colors.yellowWarning;
-      case 'active': return colors.greenSuccess;
-      case 'funded': return colors.greenSuccess;
-      case 'overdue': return colors.yellowWarning;
-      case 'repaid': return colors.accentBlue;
-      case 'completed': return colors.accentBlue;
-      case 'cancelled': return colors.redError;
-      default: return colors.textGray;
+      case 'pending':    return colors.yellowWarning;
+      case 'approved':   return colors.greenSuccess;
+      case 'funding':    return colors.yellowWarning;
+      case 'active':     return colors.greenSuccess;
+      case 'funded':     return colors.greenSuccess;
+      case 'overdue':    return colors.redError;
+      case 'defaulted':  return '#dc2626';
+      case 'liquidated': return '#7f1d1d';
+      case 'repaid':     return colors.accentBlue;
+      case 'completed':  return colors.accentBlue;
+      case 'cancelled':  return colors.textGray;
+      default:           return colors.textGray;
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'pending': return 'Đang chờ';
-      case 'approved': return 'Đã duyệt';
-      case 'funding': return 'Đang gọi vốn';
-      case 'active': return 'Đang hoạt động';
-      case 'funded': return 'Đã cấp vốn';
-      case 'overdue': return 'Quá hạn';
-      case 'repaid': return 'Đã trả nợ';
-      case 'completed': return 'Hoàn thành';
-      case 'cancelled': return 'Đã hủy';
-      default: return status;
+      case 'pending':    return 'Đang chờ';
+      case 'approved':   return 'Đã duyệt';
+      case 'funding':    return 'Đang gọi vốn';
+      case 'active':     return 'Đang hoạt động';
+      case 'funded':     return 'Đã cấp vốn';
+      case 'overdue':    return 'Quá hạn';
+      case 'defaulted':  return 'Vi phạm hợp đồng';
+      case 'liquidated': return 'Đã thanh lý';
+      case 'repaid':     return 'Đã trả nợ';
+      case 'completed':  return 'Hoàn thành';
+      case 'cancelled':  return 'Đã hủy';
+      default:           return status;
     }
   };
 
   // Handle delete/cancel loan request
-  const handleDelete = () => {
-    Alert.alert(
-      'Xác nhận xóa',
-      'Bạn có chắc muốn xóa yêu cầu vay này? Hành động này không thể hoàn tác.',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xóa',
-          style: 'destructive',
-          onPress: async () => {
-            setIsDeleting(true);
-            try {
-              const { loanApi } = await import('@/api/loan.api');
-              await loanApi.deleteRequest(loanId);
-              Alert.alert('Thành công', 'Đã xóa yêu cầu vay.', [
-                { text: 'OK', onPress: () => navigation.goBack() },
-              ]);
-            } catch (error: any) {
-              const msg = error?.response?.data?.message || 'Không thể xóa yêu cầu vay';
-              Alert.alert('Lỗi', msg);
-            } finally {
-              setIsDeleting(false);
-            }
-          },
-        },
-      ],
-    );
+  const handleDelete = () => setShowDeleteModal(true);
+
+  const confirmDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const { loanApi } = await import('@/api/loan.api');
+      await loanApi.deleteRequest(loanId);
+      setShowDeleteModal(false);
+      toast.success('Đã xóa yêu cầu vay thành công.');
+      navigation.goBack();
+    } catch (error: any) {
+      setShowDeleteModal(false);
+      const msg = error?.response?.data?.message || 'Không thể xóa yêu cầu vay';
+      toast.error(msg);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // Handle edit loan request - navigate to CreateLoan with edit params
@@ -259,14 +296,7 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
   // Handle fund/invest in loan
   const handleInvest = () => {
     if (user?.kycStatus !== 'verified') {
-      Alert.alert(
-        'Yêu cầu xác thực',
-        'Bạn cần hoàn thành xác thực danh tính (KYC) trước khi cho vay.',
-        [
-          { text: 'Để sau', style: 'cancel' },
-          { text: 'Xác thực ngay', onPress: () => navigation.navigate('KYCVerification' as any) }
-        ]
-      );
+      setShowKYCModal(true);
       return;
     }
     if (connections.length === 0) {
@@ -405,7 +435,9 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
               {loan.creditScore > 0 && (
                 <View style={styles.creditScoreRow}>
                   <Text style={[styles.creditScoreLabel, { color: colors.textGray }]}>Điểm tín dụng:</Text>
-                  <Text style={[styles.creditScore, { color: colors.greenSuccess }]}>{loan.creditScore}</Text>
+                  <Text style={[styles.creditScore, { color: getCreditScoreColor(loan.creditScore) }]}>
+                    {loan.creditScore} · {getCreditScoreLabel(loan.creditScore)}
+                  </Text>
                 </View>
               )}
             </View>
@@ -423,6 +455,20 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
             </View>
           </View>
         </Card>
+
+        {/* DebtToken Warning */}
+        {debtInfo?.hasDebt && (
+          <View style={[styles.debtWarning, { backgroundColor: '#7f1d1d20', borderColor: '#dc2626' }]}>
+            <Ionicons name="warning-outline" size={20} color="#dc2626" />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={[styles.debtWarningTitle, { color: '#dc2626' }]}>Cảnh báo: Người vay có nợ xấu</Text>
+              <Text style={[styles.debtWarningText, { color: '#fca5a5' }]}>
+                Người vay này có {debtInfo.count} NFT nợ xấu (DebtToken) được ghi nhận trên blockchain.
+                Tổng nợ: {debtInfo.totalAmount.toFixed(2)} USDT.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Amount Card */}
         <LinearGradient
@@ -516,6 +562,27 @@ const LoanDetailScreen: React.FC<LoanDetailScreenProps> = ({
 
       {/* Footer Actions - dynamic based on ownership and status */}
       {renderFooterButtons()}
+
+      <ConfirmModal
+        visible={showDeleteModal}
+        title="Xóa yêu cầu vay"
+        message="Bạn có chắc muốn xóa yêu cầu vay này? Hành động này không thể hoàn tác."
+        confirmText="Xóa"
+        variant="danger"
+        loading={isDeleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setShowDeleteModal(false)}
+      />
+
+      <KYCRequiredModal
+        visible={showKYCModal}
+        reason="invest"
+        onVerify={() => {
+          setShowKYCModal(false);
+          navigation.navigate('KYCVerification' as any);
+        }}
+        onDismiss={() => setShowKYCModal(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -607,6 +674,23 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  debtWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  debtWarningTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  debtWarningText: {
+    fontSize: 12,
+    lineHeight: 18,
   },
   amountCard: {
     borderRadius: 16,

@@ -29,6 +29,7 @@ type BrowseLoansScreenProps = {
 interface LoanRequest {
   id: string;
   borrowerName: string;
+  borrowerWallet: string | null;
   amount: number;
   interestRate: number;
   term: number;
@@ -42,11 +43,12 @@ interface LoanCardProps {
   risk: { label: string; color: string; desc: string };
   colors: any;
   onPress: () => void;
+  hasDebt?: boolean;
 }
 
-const LoanCard = memo<LoanCardProps>(({ loan, risk, colors, onPress }) => (
+const LoanCard = memo<LoanCardProps>(({ loan, risk, colors, onPress, hasDebt }) => (
   <TouchableOpacity activeOpacity={0.95} onPress={onPress}>
-    <Card style={[styles.loanCard, { backgroundColor: colors.darkSurface, borderColor: colors.darkBorder }]}>
+    <Card style={[styles.loanCard, { backgroundColor: colors.darkSurface, borderColor: hasDebt ? '#dc2626' : colors.darkBorder }]}>
       <View style={styles.cardHeader}>
         <View style={styles.borrowerRow}>
           <View style={[styles.avatar, { backgroundColor: colors.accentBlue + '20' }]}>
@@ -55,7 +57,15 @@ const LoanCard = memo<LoanCardProps>(({ loan, risk, colors, onPress }) => (
             </Text>
           </View>
           <View style={styles.borrowerInfo}>
-            <Text style={[styles.borrowerName, { color: colors.textWhite }]}>{loan.borrowerName}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={[styles.borrowerName, { color: colors.textWhite }]}>{loan.borrowerName}</Text>
+              {hasDebt && (
+                <View style={styles.debtBadge}>
+                  <Ionicons name="warning" size={10} color="#fff" />
+                  <Text style={styles.debtBadgeText}>Nợ xấu</Text>
+                </View>
+              )}
+            </View>
             <View style={styles.purposeTag}>
               <Text style={[styles.purpose, { color: colors.textGray }]}>{loan.purpose}</Text>
             </View>
@@ -138,6 +148,7 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
   const { user } = useAuth();
   const [loanRequests, setLoanRequests] = useState<LoanRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [debtTokenMap, setDebtTokenMap] = useState<Record<string, boolean>>({});
 
   // Fetch pending loan requests from API - refresh on focus
   useFocusEffect(
@@ -161,14 +172,30 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
             .map((req: any) => ({
               id: req._id || req.id,
               borrowerName: req.borrowerId?.fullName || 'Ẩn danh',
+              borrowerWallet: req.borrowerId?.walletAddress || null,
               amount: toNum(req.loanAmount),
               interestRate: toNum(req.interestRate),
               term: toNum(req.durationDays) || 30,
               purpose: req.purpose || 'Không rõ',
-              creditScore: toNum(req.borrowerId?.creditScore) || 500,
-              funded: 0, // Backend chưa trả về funded %, mặc định 0
+              creditScore: toNum(req.borrowerId?.creditScore) || 0,
+              funded: 0,
             }));
           setLoanRequests(requests);
+
+          // Kiểm tra nợ xấu cho từng người vay (song song)
+          const wallets = [...new Set(requests.map((r: LoanRequest) => r.borrowerWallet).filter(Boolean))] as string[];
+          if (wallets.length > 0) {
+            const { loanApi } = await import('@/api/loan.api');
+            const results = await Promise.allSettled(wallets.map(w => loanApi.checkDebtTokens(w)));
+            const map: Record<string, boolean> = {};
+            results.forEach((res, i) => {
+              if (res.status === 'fulfilled') {
+                const data = res.value?.data || res.value;
+                map[wallets[i]] = data?.hasDebt ?? false;
+              }
+            });
+            if (isActive) setDebtTokenMap(map);
+          }
         } catch (err) {
           console.error('Error fetching pending requests:', err);
           if (isActive) setLoanRequests([]);
@@ -199,9 +226,10 @@ const BrowseLoansScreen: React.FC<BrowseLoansScreenProps> = ({ navigation }) => 
         risk={risk}
         colors={colors}
         onPress={() => navigation.navigate('LoanDetail', { loanId: loan.id })}
+        hasDebt={loan.borrowerWallet ? (debtTokenMap[loan.borrowerWallet] ?? false) : false}
       />
     );
-  }, [getRiskLevel, colors, navigation]);
+  }, [getRiskLevel, colors, navigation, debtTokenMap]);
 
   const filteredLoans = useMemo(() => {
     return loanRequests.filter((loan) => {
@@ -459,7 +487,20 @@ const styles = StyleSheet.create({
   borrowerName: {
     fontSize: 17,
     fontWeight: 'bold',
-    marginBottom: 4,
+  },
+  debtBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    backgroundColor: '#dc2626',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    gap: 2,
+  },
+  debtBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold' as const,
   },
   purposeTag: {
     alignSelf: 'flex-start',

@@ -27,9 +27,13 @@ const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation, r
   const { colors } = useTheme();
   const { idInfo, frontImageUri, backImageUri } = route.params;
 
+  // Auto-clean số CCCD từ OCR: bỏ mọi ký tự không phải số
+  const cleanId = (raw: string) => raw.replace(/\D/g, '');
+
   // State trích xuất từ OCR
   const [fullName, setFullName] = useState(idInfo.name || '');
-  const [idNumber, setIdNumber] = useState(idInfo.id || '');
+  const [idNumber, setIdNumber] = useState(cleanId(idInfo.id || ''));
+  const [idError, setIdError] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState(idInfo.dob || '');
   const [gender, setGender] = useState(idInfo.sex || '');
   const [nationality, setNationality] = useState(idInfo.nationality || 'Việt Nam');
@@ -41,15 +45,16 @@ const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation, r
 
 
   const handleConfirm = () => {
-    // Validate số CCCD: phải là 12 số (CCCD mới) hoặc 9 số (CMND cũ)
-    const trimmedId = idNumber.trim();
-    if (!/^\d{9}$|^\d{12}$/.test(trimmedId)) {
-      Alert.alert(
-        'Số CCCD không hợp lệ',
-        'Số Căn cước công dân phải gồm 12 chữ số (CCCD mới) hoặc 9 chữ số (CMND cũ). Vui lòng kiểm tra lại.',
-      );
+    // Strip non-digits trước khi validate (xử lý OCR có khoảng trắng, dấu gạch, etc.)
+    const cleanedId = idNumber.replace(/\D/g, '');
+    if (cleanedId !== idNumber) {
+      setIdNumber(cleanedId); // Tự động làm sạch nếu chưa sạch
+    }
+    if (!/^\d{9}$|^\d{12}$/.test(cleanedId)) {
+      setIdError('Phải gồm 12 chữ số (CCCD mới) hoặc 9 chữ số (CMND cũ)');
       return;
     }
+    setIdError('');
     if (!fullName.trim()) {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập họ và tên.');
       return;
@@ -113,7 +118,41 @@ const KYCVerifyInfoScreen: React.FC<KYCVerifyInfoScreenProps> = ({ navigation, r
         <Text style={[styles.sectionTitle, { color: colors.textWhite }]}>Thông tin cá nhân</Text>
 
         {renderTextField('Họ và tên', fullName, setFullName)}
-        {renderTextField('Số CMND/CCCD', idNumber, setIdNumber)}
+
+        {/* CCCD field: chỉ nhận chữ số, hiện lỗi inline */}
+        <View style={styles.fieldContainer}>
+          <Text style={[styles.fieldLabel, { color: colors.textGray }]}>Số CMND/CCCD</Text>
+          <TextInput
+            style={[
+              styles.fieldInput,
+              {
+                backgroundColor: colors.darkSurface,
+                borderColor: idError ? '#ef4444' : colors.darkBorder,
+                color: colors.textWhite,
+              },
+            ]}
+            value={idNumber}
+            onChangeText={(text) => {
+              // Auto-strip non-digits ngay khi gõ
+              const digits = text.replace(/\D/g, '');
+              setIdNumber(digits);
+              if (idError && /^\d{9}$|^\d{12}$/.test(digits)) {
+                setIdError('');
+              }
+            }}
+            keyboardType="numeric"
+            maxLength={12}
+            placeholderTextColor={colors.textGray}
+            placeholder="9 hoặc 12 chữ số"
+          />
+          {idError ? (
+            <Text style={styles.fieldError}>{idError}</Text>
+          ) : (
+            <Text style={[styles.fieldHint, { color: colors.textGray }]}>
+              {idNumber.length}/12 chữ số
+            </Text>
+          )}
+        </View>
 
         <View style={styles.rowFields}>
           <View style={styles.halfField}>
@@ -259,6 +298,15 @@ const styles = StyleSheet.create({
   fieldInputMultiline: {
     minHeight: 80,
     textAlignVertical: 'top',
+  },
+  fieldError: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#ef4444',
+  },
+  fieldHint: {
+    marginTop: 4,
+    fontSize: 11,
   },
   rowFields: {
     flexDirection: 'row',

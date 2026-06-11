@@ -12,13 +12,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import notificationApi from '@/api/notification.api';
 import LinearGradient from 'react-native-linear-gradient';
 import { Card } from '@/components/common';
 import { useAppDispatch, useAuth, useOpenBanking, loadConnections } from '@/store';
 import { loadUser } from '@/store/slices/authSlice';
 import { loadCreditScore } from '@/store/slices/openBankingSlice';
 import { useTheme, useWeb3 } from '@/providers';
+import { useNotification } from '@/providers/NotificationProvider';
 import { RootStackParamList } from '@/navigation/types';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 import { getRatingColor } from '@/utils';
@@ -49,7 +49,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [featuredLoans, setFeaturedLoans] = React.useState<any[]>([]);
   const [recentTransactions, setRecentTransactions] = React.useState<any[]>([]);
   const [myPendingLoansCount, setMyPendingLoansCount] = React.useState<number>(0);
-  const [unreadNotifications, setUnreadNotifications] = React.useState<number>(0);
+  // Lấy từ NotificationProvider (cập nhật realtime qua socket)
+  const { unreadCount: unreadNotifications } = useNotification();
 
   const fetchData = React.useCallback(async () => {
     try {
@@ -90,14 +91,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         console.log('Error fetching transactions:', txErr);
       }
 
-      // 4. Fetch Unread Notifications
-      // Backend returns { notifications: [...], unreadCount: n } directly (no .data wrapper)
-      try {
-        const notiRes = await notificationApi.getMyNotifications(1, 0);
-        setUnreadNotifications(notiRes?.unreadCount || 0);
-      } catch (notiErr) {
-        console.log('Error fetching notifications:', notiErr);
-      }
+      // Unread count được quản lý bởi NotificationProvider (socket realtime)
     } catch (error) {
       console.log('Error fetching home data:', error);
     }
@@ -108,11 +102,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     React.useCallback(() => {
       dispatch(loadUser());
       dispatch(loadConnections());
-      if (!creditScore && user?._id) {
+      if (user?._id) {
         dispatch(loadCreditScore(user._id));
       }
       fetchData();
-    }, [dispatch, creditScore, user?._id, fetchData])
+    }, [dispatch, user?._id, fetchData])
   );
 
   const onRefresh = async () => {
@@ -187,12 +181,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             </View>
           </View>
           <View style={styles.headerIcons}>
-            <TouchableOpacity
-              style={[styles.notificationButton, { backgroundColor: colors.darkSurface, marginRight: 10 }]}
-              onPress={() => navigation.navigate('Messages')}
-            >
-              <Ionicons name="chatbubbles-outline" size={22} color={colors.textWhite} />
-            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.notificationButton, { backgroundColor: colors.darkSurface }]}
               onPress={() => navigation.navigate('Notifications' as any)}

@@ -84,4 +84,28 @@ export const loanApi = {
         const response = await apiClient.get(`/loans/${loanId}/bank-info`);
         return response.data;
     },
+
+    /** Kiểm tra NFT nợ xấu (DebtToken) của một địa chỉ ví */
+    checkDebtTokens: async (walletAddress: string) => {
+        const response = await apiClient.get(`/loans/debt/check/${walletAddress}`);
+        return response.data;
+    },
+};
+
+// Tỷ giá thị trường — cache trong memory, tránh gọi liên tục
+let _ratesCache: { ethUsd: number; usdtVnd: number; fetchedAt: number } | null = null;
+
+export const getRates = async (): Promise<{ ethUsd: number; usdtVnd: number }> => {
+    const TTL = 5 * 60 * 1000;
+    if (_ratesCache && Date.now() - _ratesCache.fetchedAt < TTL) {
+        return _ratesCache;
+    }
+    try {
+        const response = await apiClient.get('/credit/rates');
+        const data = response.data;
+        _ratesCache = { ethUsd: data.ethUsd, usdtVnd: data.usdtVnd, fetchedAt: Date.now() };
+        return _ratesCache;
+    } catch {
+        return { ethUsd: 2000, usdtVnd: 25000 };
+    }
 };

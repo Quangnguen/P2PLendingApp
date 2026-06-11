@@ -24,7 +24,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
-import { Card } from '@/components/common';
+import { Card, KYCRequiredModal } from '@/components/common';
 import { useTheme, useWeb3 } from '@/providers';
 import { RootStackParamList } from '@/navigation/types';
 import { CONTRACT_ADDRESSES } from '@/config/walletconnect';
@@ -56,6 +56,8 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
   const [loadingData, setLoadingData] = useState(true);
   const [fundingStep, setFundingStep] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showKYCModal, setShowKYCModal] = useState(false);
+  const [debtInfo, setDebtInfo] = useState<{ hasDebt: boolean; count: number; totalAmount: number } | null>(null);
   const [successData, setSuccessData] = useState<{txHash: string} | null>(null);
 
   // Helper: Safely convert MongoDB Decimal128 to number
@@ -78,8 +80,10 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
         // Tính collateral ratio thực tế
         const loanAmount = toNum(reqData.loanAmount);
         const collateral = toNum(reqData.collateralAmount);
-        // Dùng giá ETH thống nhất 2000 USDT (khớp với CreateLoanScreen MOCK_ETH_PRICE)
-        const ethPrice = 2000;
+        // Lấy giá ETH từ backend (CoinGecko), fallback 2000
+        const { getRates } = await import('@/api/loan.api');
+        const rates = await getRates().catch(() => ({ ethUsd: 2000, usdtVnd: 25000 }));
+        const ethPrice = rates.ethUsd;
         const collateralValueUSDT = collateral * ethPrice;
         const actualCollateralRatio = loanAmount > 0
           ? Math.round((collateralValueUSDT / loanAmount) * 100)
@@ -112,6 +116,25 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
     };
     fetchData();
   }, [requestId]);
+
+  React.useEffect(() => {
+    if (!loanRequest?.borrowerWallet) return;
+    const fetch = async () => {
+      try {
+        const { loanApi } = await import('@/api/loan.api');
+        const result = await loanApi.checkDebtTokens(loanRequest.borrowerWallet);
+        const data = result?.data || result;
+        setDebtInfo({
+          hasDebt: data?.hasDebt ?? false,
+          count: data?.debtTokenCount ?? 0,
+          totalAmount: parseFloat(data?.totalDebtAmount ?? '0') || 0,
+        });
+      } catch {
+        // non-critical
+      }
+    };
+    fetch();
+  }, [loanRequest?.borrowerWallet]);
 
   if (loadingData || !loanRequest) {
     return (
@@ -154,7 +177,10 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
     if (score >= 750) return 'Xuất sắc';
     if (score >= 700) return 'Tốt';
     if (score >= 650) return 'Khá';
-    return 'Trung bình';
+    if (score >= 500) return 'Trung bình';
+    if (score >= 400) return 'Yếu';
+    if (score >= 200) return 'Kém';
+    return 'Rất xấu';
   };
 
   const risk = getRiskLevel(loanRequest.creditScore, loanRequest.collateralRatio);
@@ -434,6 +460,24 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
               </Text>
             </>
           )}
+
+          {debtInfo?.hasDebt && (
+            <>
+              <View style={[styles.divider, { backgroundColor: colors.darkBorder }]} />
+              <View style={[styles.debtWarning, { backgroundColor: '#7f1d1d20', borderColor: '#dc2626' }]}>
+                <Ionicons name="warning-outline" size={20} color="#dc2626" />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.debtWarningTitle, { color: '#dc2626' }]}>
+                    Cảnh báo: Người vay có nợ xấu!
+                  </Text>
+                  <Text style={[styles.debtWarningText, { color: '#fca5a5' }]}>
+                    Người vay này có {debtInfo.count} NFT nợ xấu (DebtToken) trên blockchain.
+                    Tổng nợ: {debtInfo.totalAmount.toFixed(2)} USDT. Hãy cân nhắc kỹ trước khi đầu tư.
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
         </Card>
 
         {/* Risk Assessment Card */}
@@ -549,14 +593,7 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
           ]}
           onPress={() => {
             if (user?.kycStatus !== 'verified') {
-              Alert.alert(
-                'Yêu cầu xác thực',
-                'Bạn cần hoàn thành xác thực danh tính (KYC) trước khi cho vay.',
-                [
-                  { text: 'Để sau', style: 'cancel' },
-                  { text: 'Xác thực ngay', onPress: () => navigation.navigate('KYCVerification' as any) }
-                ]
-              );
+              setShowKYCModal(true);
               return;
             }
             if (connections.length === 0) {
@@ -674,6 +711,16 @@ const FundLoanScreen: React.FC<FundLoanScreenProps> = ({ navigation, route }) =>
           </View>
         </View>
       )}
+
+      <KYCRequiredModal
+        visible={showKYCModal}
+        reason="invest"
+        onVerify={() => {
+          setShowKYCModal(false);
+          navigation.navigate('KYCVerification' as any);
+        }}
+        onDismiss={() => setShowKYCModal(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -744,6 +791,9 @@ const styles = StyleSheet.create({
   divider: { height: 1, marginVertical: 14 },
   purposeTitle: { fontSize: 13, marginBottom: 6 },
   purposeText: { fontSize: 14, lineHeight: 22 },
+  debtWarning: { flexDirection: 'row', alignItems: 'flex-start', borderWidth: 1, borderRadius: 10, padding: 12, marginTop: 4 },
+  debtWarningTitle: { fontSize: 13, fontWeight: '700', marginBottom: 3 },
+  debtWarningText: { fontSize: 12, lineHeight: 17 },
 
   // Risk Card
   riskCard: { marginBottom: 16 },

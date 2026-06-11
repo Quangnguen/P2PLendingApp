@@ -12,6 +12,7 @@ import { store } from './src/store';
 import { AppNavigator } from './src/navigation';
 import { ThemeProvider, ToastProvider } from './src/providers';
 import { Web3Provider } from '@/providers/Web3Provider';
+import { NotificationProvider } from '@/providers/NotificationProvider';
 
 // Error Boundary to catch and display runtime errors on screen
 class ErrorBoundary extends React.Component<
@@ -88,7 +89,9 @@ const App: React.FC = () => {
             <Web3Provider>
               <ThemeProvider>
                 <ToastProvider>
-                  <AppNavigator />
+                  <NotificationProvider>
+                    <AppNavigator />
+                  </NotificationProvider>
                 </ToastProvider>
               </ThemeProvider>
             </Web3Provider>

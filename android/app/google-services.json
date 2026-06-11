@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "387768236663",
+    "project_id": "my-project-a5520",
+    "storage_bucket": "my-project-a5520.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:387768236663:android:884360804cfb7f19d1a472",
+        "android_client_info": {
+          "package_name": "com.p2plendingapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDMIC1bJK7A8BC5xp-qMko1FZMZ8EgxEsc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

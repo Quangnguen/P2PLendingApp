@@ -109,6 +109,10 @@ export enum LoanDuration {
   THIRTY_DAYS = 30,
   SIXTY_DAYS = 60,
   NINETY_DAYS = 90,
+  ONE_TWENTY_DAYS = 120,
+  ONE_EIGHTY_DAYS = 180,
+  TWO_SEVENTY_DAYS = 270,
+  THREE_SIXTY_FIVE_DAYS = 365,
 }
 
 export interface LoanSummary {

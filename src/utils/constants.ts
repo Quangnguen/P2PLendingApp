@@ -1,6 +1,6 @@
 // export const API_BASE_URL = 'http://10.0.2.2:9000/api/v1'; // Android Emulator
 // export const API_BASE_URL = 'http://localhost:9000/api/v1'; // iOS Simulator + USB (adb reverse)
-export const API_BASE_URL = 'http://192.168.1.54:9000/api/v1'; // Physical Device via WiFi
+export const API_BASE_URL = 'http://192.168.10.104:9000/api/v1'; // Physical Device via WiFi
 // export const API_BASE_URL = 'http://localhost:9000/api/v1'; // USB - cần chạy: adb reverse tcp:9000 tcp:9000
 
 export const STORAGE_KEYS = {
@@ -40,6 +40,10 @@ export const LOAN_CONFIG = {
     { label: '30 ngày', value: 30 },
     { label: '60 ngày', value: 60 },
     { label: '90 ngày', value: 90 },
+    { label: '4 tháng', value: 120 },
+    { label: '6 tháng', value: 180 },
+    { label: '9 tháng', value: 270 },
+    { label: '1 năm', value: 365 },
   ],
 
   /** Lãi suất gợi ý theo điểm tín dụng */
